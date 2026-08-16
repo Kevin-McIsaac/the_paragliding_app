@@ -354,9 +354,17 @@ class PgeSitesDownloadService {
       // no test saw it because they all import parsed rows and never come
       // through here. The app reads by name, so the honest question is whether
       // the columns it reads are present.
+      //
+      // `ref` is required, not optional. It is the producer's decision about
+      // which guide's id keys each launch, and the app no longer has a second
+      // opinion to fall back on - deriving one risked keying a launch
+      // differently from the producer, which is a delete plus an insert that
+      // takes the pilot's favourite with it. A snapshot without the column is
+      // refused whole, leaving the working catalogue untouched, which is the
+      // same answer this guard already gives a truncated body.
       final body = response.body;
       final header = body.split('\n').first.split(',').map((c) => c.trim()).toSet();
-      const required = {'name', 'longitude', 'latitude', 'source'};
+      const required = {'ref', 'name', 'longitude', 'latitude', 'source'};
       final missing = required.difference(header);
 
       if (missing.isNotEmpty || body.length < 100000) {
@@ -690,8 +698,10 @@ class PgeSitesDownloadService {
           // Which site this row belongs to, as `provider:parentId` tokens in
           // the same form as `source`. A landing shares one with its launch.
           'site_group': optional('site_group'),
-          // What a guide says about a landing, verbatim.
-          'notes': optional('notes'),
+          // No `notes`. The producer stopped emitting the column: a landing is
+          // a map pin and a row on its launch, both linking to the guide's own
+          // page, so 2,892 rows of prose nothing displayed were 19.7% of a
+          // catalogue a fresh install downloads and stores.
           // Which guide's record this row's name, wind and position came from.
           //
           // Not every field: the producer gap-fills altitude and notes from a

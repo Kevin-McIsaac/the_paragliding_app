@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/site.dart';
+import '../../data/models/guide.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
 import '../../data/models/wind_forecast.dart';
@@ -11,7 +12,6 @@ import '../../data/models/flyability_status.dart';
 import '../models/site_marker_presentation.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
-import '../../services/location_service.dart';
 import '../../services/weather_service.dart';
 import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
@@ -88,12 +88,16 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   /// the catalogue entry was passed in already.
   ParaglidingSite? _catalogSite;
 
-  /// The landings that serve this launch, from the catalogue.
+  /// The other half of this site's group: a launch's landings, or a landing's
+  /// launches.
+  ///
+  /// One field for both directions because it is one relationship, published by
+  /// the guides as a shared `site_group` and symmetric by nature. Which way it
+  /// is read follows from the open site's own type.
   ///
   /// Held rather than derived at build time because the join is a query. Empty
-  /// for a landing's own page, and for a catalogue published before the
-  /// producer emitted the grouping.
-  List<ParaglidingSite> _landings = const [];
+  /// for a catalogue published before the producer emitted the grouping.
+  List<ParaglidingSite> _related = const [];
 
   /// Whichever record actually describes this launch: the catalogue entry
   /// passed in, or the one a flown site is linked to.
@@ -109,8 +113,14 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   /// It has no wind directions, so the forecast table, the wind rose and the
   /// flyability verdict have nothing to work from - shown anyway they would
   /// read as "we checked and it is unflyable" rather than "this question does
-  /// not apply". What is left is what a pilot actually wants: where it is, how
-  /// high, and what the guide says about it.
+  /// not apply".
+  ///
+  /// That is the *only* thing this decides. Everything else about a landing -
+  /// its marker, its page, how it is reached, how it is queried - is a site
+  /// like any other, told apart by its glyph. This flag used to be read as
+  /// licence to suppress rather more, which is how the page ended up being a
+  /// launch page with the launch taken out; what it shows instead is the
+  /// launches it serves.
   bool get _isLanding => _effectiveSite?.siteType == 'landing';
 
   List<({String provider, String id})> get _sourceTabs {
@@ -118,49 +128,63 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     return sources.isEmpty ? const [(provider: 'pge', id: '')] : sources;
   }
 
-  /// ParaglidingEarth's own id for this launch, from the catalogue's `source`.
-  ///
-  /// Null when no guide in this launch is PGE - an Australian launch Site
-  /// Guide carries alone has no PGE detail to fetch.
-  int? get _pgeSourceId {
-    for (final source in _effectiveSite?.sources ?? const []) {
-      if (source.provider == 'pge') return int.tryParse(source.id);
-    }
-    return null;
-  }
-
-  /// Guide names as a pilot would recognise them, not their internal keys.
-  static String _sourceLabel(String provider) => switch (provider) {
-        'pge' => 'PGE',
-        'ansg' => 'ANSG',
-        'dhv' => 'DHV',
-        _ => provider,
-      };
-
-  static String _sourceFullName(String provider) => switch (provider) {
-        'pge' => 'ParaglidingEarth',
-        'ansg' => 'Australian National Site Guide',
-        'dhv' => 'DHV Geländedatenbank',
-        _ => provider,
-      };
+  // _pgeSourceId went with the synthesised `pge_link`. It parsed the PGE
+  // source id as an int, which is null for a landing - whose id is its
+  // takeoff's with `-lz` appended - so it could not have addressed those pages
+  // anyway. The live lookup finds its record through
+  // ParaglidingEarthApi.getDetailsForCatalogSite, and the link out is built
+  // from the published registry.
 
   /// What a tab holds, for the tooltip. The labels are short enough to be
   /// ambiguous on their own - "PGE" means nothing until you have seen it
   /// spelled out once.
+  ///
+  /// The names themselves used to be three `switch` expressions here, and the
+  /// site-page URLs a fourth. They are the producer's now - it publishes the
+  /// guide list it federates from, so a guide added there is named here without
+  /// an app release. See [Guides].
   static String _sourceTooltip(String provider) =>
-      '${_sourceFullName(provider)} site details';
+      '${Guides.fullNameOf(provider)} site details';
 
-  static String? _sourceUrl(String provider, String id) => switch (provider) {
-        'pge' => 'https://www.paraglidingearth.com/?site=$id',
-        // Site Guide ids are "<siteId>-<launchId>"; the page is per site.
-        'ansg' => 'https://siteguide.org.au/sites/details/${id.split('-').first}',
-        // DHV ids are "<Gelände>-<slug of the launch name>". DHV has no page
-        // per launch - every takeoff and landing on a hill shares one - so
-        // the Gelände half is the whole address.
-        'dhv' =>
-          'https://service.dhv.de/db2/details.php?qi=glp_details&item=${id.split('-').first}',
-        _ => null,
-      };
+  /// Credit for a guide's data, where the guide states a licence.
+  ///
+  /// Empty for one that does not - DHV publishes no terms with its export, and
+  /// crediting it under someone else's licence would be a claim nobody made.
+  List<Widget> _guideAttribution(String provider) {
+    final guide = Guides.of(provider);
+    if (guide == null || !guide.hasLicence) return const [];
+
+    return [
+      const SizedBox(height: 16),
+      Text.rich(
+        TextSpan(
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.grey,
+              ),
+          children: [
+            TextSpan(text: 'Site data © ${guide.fullName}, licensed '),
+            TextSpan(
+              text: guide.licence,
+              style: const TextStyle(
+                color: Colors.blue,
+                decoration: TextDecoration.underline,
+              ),
+              recognizer: TapGestureRecognizer()
+                ..onTap = () => _launchUrl(guide.licenceUrl),
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  /// This guide's page for the launch on screen.
+  ///
+  /// Takes the site rather than a `source` id, because the id that addresses a
+  /// guide's page lives in `site_group` - see [Guide.siteUrl], and the 4,828
+  /// links that were wrong while this derived one from `source`.
+  String? _sourceUrl(String provider) =>
+      Guides.of(provider)?.siteUrl(_effectiveSite?.siteGroup);
 
   /// Load the catalogue entry a flown site points at, and rebuild the tabs.
   ///
@@ -195,7 +219,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     // Resolve the catalogue entry first: it decides how many tabs there are,
     // and supplies the guide's own coordinates for the detail lookup.
     _loadCatalogSite().then((_) {
-      _loadLandings();
+      _loadRelated();
       return _loadSiteDetails();
     });
     _loadWindData();
@@ -346,31 +370,44 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     );
   }
 
-  /// The landings serving this launch, from the catalogue.
+  /// The other half of this site's group, from the catalogue.
   ///
-  /// Cheap and local, so it runs alongside the network fetch rather than after
-  /// it - a pilot at a launch site with no signal still gets this.
-  Future<void> _loadLandings() async {
+  /// A launch loads its landings; a landing loads the launches it serves. The
+  /// type inverts the query rather than blocking it, which is what gives a
+  /// landing's page something to be about.
+  ///
+  /// Cheap and local - one indexed read - so it runs alongside the network
+  /// fetch rather than after it.
+  Future<void> _loadRelated() async {
     final site = _effectiveSite;
-    if (site == null || site.siteType == 'landing') return;
+    if (site == null) return;
 
-    final landings =
-        await PgeSitesDatabaseService.instance.getLandingsForSite(site);
-    if (mounted && landings.isNotEmpty) {
-      setState(() => _landings = landings);
+    final service = PgeSitesDatabaseService.instance;
+    final related = site.siteType == 'landing'
+        ? await service.getLaunchesForLanding(site)
+        : await service.getLandingsForSite(site);
+    if (mounted && related.isNotEmpty) {
+      setState(() => _related = related);
     }
   }
 
-  /// The landings serving this launch, listed nearest first.
+  /// The other half of this site's group, listed nearest first.
   ///
-  /// Distance and bearing are shown because the landing is not in sight of the
-  /// launch - the median gap is 1.7km - so "where is it" is the first question
-  /// and a name alone does not answer it.
-  Widget _buildLandingsSection(double latitude, double longitude) {
+  /// On a launch these are its landings, labelled `Landing:`. On a landing they
+  /// are the launches it serves, labelled `Serves:` - the same rows read the
+  /// other way, which is what stops a landing's page being a launch page with
+  /// the launch bits hidden.
+  ///
+  /// Distance is shown because the two are not in sight of each other - the
+  /// median gap is 1.7km - so "where is it" is the first question and a name
+  /// alone does not answer it.
+  Widget _buildRelatedSection(double latitude, double longitude) {
+    final label = _isLanding ? 'Serves:' : 'Landing:';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final landing in _landings)
+        for (final other in _related)
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: Wrap(
@@ -379,48 +416,52 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
               runSpacing: 4,
               children: [
                 Text(
-                  _landings.length > 1 ? 'Landing:' : 'Landing:',
+                  label,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontWeight: FontWeight.w500,
                       ),
                 ),
-                // Tappable, because the rules live on the landing's own page
-                // and a name alone does not say there is more to read.
+                // Opens that site's own page, whichever direction this is
+                // being read in. Both routes to a landing - this row and the
+                // map pin - now reach the same place, and the guide is one tab
+                // further on rather than something a name does silently.
+                //
+                // Altitude is conditional because 153 landings have none, one
+                // of them on Mt Broughton, which is where this started.
                 InkWell(
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (context) => SiteDetailsScreen(
                         site: null,
-                        paraglidingSite: landing,
+                        paraglidingSite: other,
                         maxWindSpeed: widget.maxWindSpeed,
                         cautionWindSpeed: widget.cautionWindSpeed,
                       ),
                     ),
                   ),
                   child: Text(
-                    landing.name,
+                    other.name,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.blue,
                           decoration: TextDecoration.underline,
                         ),
                   ),
                 ),
-                if ((landing.description ?? '').isNotEmpty)
-                  const Icon(Icons.notes, size: 14, color: Colors.blue),
-                if (landing.altitude != null)
+                if (other.altitude != null)
                   _iconFact(
                     Icons.terrain,
-                    '${landing.altitude} m AMSL',
+                    '${other.altitude} m AMSL',
                     tooltip: 'Altitude above mean sea level',
                   ),
                 _iconFact(
                   Icons.straighten,
-                  _formatDistance(
-                      landing.distanceTo(latitude, longitude)),
-                  tooltip: 'Distance from the launch',
+                  _formatDistance(other.distanceTo(latitude, longitude)),
+                  tooltip: _isLanding
+                      ? 'Distance from the landing'
+                      : 'Distance from the launch',
                 ),
                 InkWell(
-                  onTap: () => _launchMap(landing.latitude, landing.longitude),
+                  onTap: () => _launchMap(other.latitude, other.longitude),
                   child: const Icon(Icons.map, size: 16, color: Colors.blue),
                 ),
               ],
@@ -454,14 +495,10 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
         setState(() {
           _detailedData = details ?? {};
 
-          // Keep the link available even when the fetch returned nothing,
-          // since that is when you most want to go and look. Built from
-          // ParaglidingEarth's own id, never the catalogue's.
-          final pgeId = _pgeSourceId;
-          if (pgeId != null) {
-            _detailedData!['pge_link'] = 'https://www.paraglidingearth.com/?site=$pgeId';
-          }
-
+          // No `pge_link` synthesised here any more. It existed so the tab kept
+          // a link when the fetch returned nothing; the link is now built from
+          // the catalogue row and the published registry, which needs no fetch
+          // at all - so it is there whether this succeeded or not.
           _isLoadingDetails = false;
         });
       }
@@ -469,12 +506,6 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
       if (mounted) {
         setState(() {
           _detailedData = {};
-
-          final pgeId = _pgeSourceId;
-          if (pgeId != null) {
-            _detailedData!['pge_link'] = 'https://www.paraglidingearth.com/?site=$pgeId';
-          }
-
           _isLoadingDetails = false;
           _loadingError = 'Failed to load detailed information';
         });
@@ -649,49 +680,35 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
 
   @override
   Widget build(BuildContext context) {
-    // Determine which site data to use
-    final String name = widget.site?.name ?? widget.paraglidingSite?.name ?? 'Unknown Site';
-    final double latitude = widget.site?.latitude ?? widget.paraglidingSite?.latitude ?? 0.0;
-    final double longitude = widget.site?.longitude ?? widget.paraglidingSite?.longitude ?? 0.0;
-    final int? altitude = widget.site?.altitude?.toInt() ?? widget.paraglidingSite?.altitude ?? _detailedData?['altitude'];
-    final String? country = widget.site?.country ?? widget.paraglidingSite?.country ?? _detailedData?['country'];
-    // Extract data from ParaglidingSite OR from fetched API data for local sites
-    final String? region = widget.paraglidingSite?.region ?? _detailedData?['region'];
-    final String? description = widget.paraglidingSite?.description ?? _detailedData?['description'];
-    final int? rating = widget.paraglidingSite?.rating ?? _detailedData?['rating'];
-    // Check for both null and empty wind directions to ensure fallback to API data
-    final List<String> windDirections =
-        (widget.paraglidingSite?.windDirections.isNotEmpty == true
-            ? widget.paraglidingSite!.windDirections
-            : (_detailedData?['wind_directions'] as List<dynamic>?)?.cast<String>()) ?? [];
+    // The header reads one record: the catalogue row the producer published.
+    //
+    // It used to coalesce three - flown site, then catalogue row, then a live
+    // ParaglidingEarth lookup - which had the app re-deciding, field by field,
+    // what the producer had already decided. On a merged launch that quietly
+    // overruled it: selection.py picks one guide's record and names it in
+    // `primary`, and the live lookup could put the losing guide's figure on
+    // screen next to an attribution crediting the winner. Altitude was fixed
+    // this way in #358; every other field kept the old shape until now.
+    //
+    // It also made the header wait on the network to draw at all, which is
+    // exactly what a pilot at a launch site does not have.
+    //
+    // The pilot's own record still wins where it exists - a flown site's name,
+    // position and altitude are theirs, and R5 says the catalogue never
+    // overwrites them. That is not the pattern being removed; the pattern
+    // being removed is a rival guide overriding the producer's choice.
+    final catalogue = _effectiveSite;
 
-    final String? siteType = widget.paraglidingSite?.siteType ?? _detailedData?['site_type'];
+    final String name = widget.site?.name ?? catalogue?.name ?? 'Unknown Site';
+    final double latitude = widget.site?.latitude ?? catalogue?.latitude ?? 0.0;
+    final double longitude = widget.site?.longitude ?? catalogue?.longitude ?? 0.0;
+    final int? altitude = widget.site?.altitude?.toInt() ?? catalogue?.altitude;
+    final List<String> windDirections = catalogue?.windDirections ?? const [];
+    final String? siteType = catalogue?.siteType;
     final int? flightCount = widget.site?.flightCount;
-
-    // Extract flight characteristics flags
-    final String? thermalFlag = _detailedData?['thermals']?.toString();
-    final String? soaringFlag = _detailedData?['soaring']?.toString();
-    final String? xcFlag = _detailedData?['xc']?.toString();
-
-    // Calculate distance if user position is available
-    String? distanceText;
-    if (widget.userPosition != null) {
-      final distance = LocationService.instance.calculateDistance(
-        widget.userPosition!.latitude,
-        widget.userPosition!.longitude,
-        latitude,
-        longitude,
-      );
-      distanceText = LocationService.formatDistance(distance);
-    }
-
-    // Guide tabs need a controller and something for them to show.
-    final bool showTabs = _tabController != null &&
-        (_detailedData != null || widget.paraglidingSite != null);
 
     final flyabilityLine =
         _isLanding ? null : _buildFlyabilityLine(windDirections);
-    final characteristicsLine = _buildCharacteristicsLine();
 
     return Scaffold(
       appBar: AppBar(
@@ -726,130 +743,96 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
       // gesture pill is drawn over the last line of whichever tab is open -
       // the same half of the inset problem the bottom sheet had, and just as
       // invisible until you look at a real phone.
+      //
+      // One layout, always. This used to choose between the tabbed page and a
+      // plainer scrolling one on `_detailedData != null || paraglidingSite !=
+      // null` - so a flown site got the second layout until ParaglidingEarth
+      // answered, and kept it forever offline. Nothing in the header needs the
+      // network any more, so there is nothing to wait for and no second layout
+      // to wait in.
       body: SafeArea(
         top: false,
-        child: showTabs
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ..._buildHeaderContent(name, windDirections),
-                      // The rose anchors the header and the facts sit beside
-                      // it. They used to be stacked underneath, which left
-                      // two thirds of the rose's row empty once the name
-                      // moved to the AppBar - and the rose floating above the
-                      // facts rather than belonging to them.
-                      _buildRoseHeader(windDirections, [
-                        if (flyabilityLine != null) flyabilityLine,
-                        ..._buildOverviewContent(
-                            name,
-                            latitude,
-                            longitude,
-                            altitude,
-                            country,
-                            region,
-                            rating,
-                            siteType,
-                            windDirections,
-                            flightCount,
-                            distanceText,
-                            thermalFlag,
-                            soaringFlag,
-                            xcFlag),
-                        if (characteristicsLine != null) characteristicsLine,
-                      ]),
-                      const SizedBox(height: 8),
-                    ],
-                  ),
-                ),
-                // Below the header, the tabs take the rest of the page. On a
-                // Scaffold body that is simply what Expanded means - no
-                // extents, no fixed heights, and nothing to outgrow.
-                TabBar(
-                  controller: _tabController,
-                  isScrollable: false,
-                  tabAlignment: TabAlignment.fill,
-                  labelPadding: const EdgeInsets.symmetric(horizontal: 8),
-                  // Material 3's own indicator and divider, rather than the
-                  // 1px hairline the previous overrides produced - which is
-                  // why these did not read as tabs.
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  tabs: [
-                    if (!_isLanding)
-                      const Tab(
-                        child: Tooltip(
-                          message: 'Flyability forecast by hour by day',
-                          child: Text('Forecast', style: TextStyle(fontSize: 12)),
-                        ),
-                      ),
-                    // One tab per contributing guide, named. The old single
-                    // unlabelled tab held ParaglidingEarth data without saying
-                    // so, and a launch can now come from more than one guide -
-                    // which disagree on names, ratings and sometimes position.
-                    for (final source in _sourceTabs)
-                      Tab(
-                        child: Tooltip(
-                          message: _sourceTooltip(source.provider),
-                          child: Text(
-                            _sourceLabel(source.provider),
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      if (!_isLanding) _buildWeatherTab(windDirections),
-                      for (final source in _sourceTabs) _buildSourceTab(source),
-                    ],
-                  ),
-                ),
-              ],
-            )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   ..._buildHeaderContent(name, windDirections),
+                  // The rose anchors the header and the facts sit beside
+                  // it. They used to be stacked underneath, which left
+                  // two thirds of the rose's row empty once the name
+                  // moved to the AppBar - and the rose floating above the
+                  // facts rather than belonging to them.
                   _buildRoseHeader(windDirections, [
                     if (flyabilityLine != null) flyabilityLine,
-                    if (characteristicsLine != null) characteristicsLine,
+                    ..._buildOverviewContent(
+                        latitude,
+                        longitude,
+                        altitude,
+                        siteType,
+                        windDirections,
+                        flightCount),
                   ]),
                   const SizedBox(height: 8),
-                  ..._buildSimpleContent(
-                      name,
-                      latitude,
-                      longitude,
-                      altitude,
-                      country,
-                      region,
-                      rating,
-                      siteType,
-                      windDirections,
-                      flightCount,
-                      distanceText,
-                      description),
                 ],
               ),
             ),
+            // Below the header, the tabs take the rest of the page. On a
+            // Scaffold body that is simply what Expanded means - no
+            // extents, no fixed heights, and nothing to outgrow.
+            TabBar(
+              controller: _tabController,
+              isScrollable: false,
+              tabAlignment: TabAlignment.fill,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+              // Material 3's own indicator and divider, rather than the
+              // 1px hairline the previous overrides produced - which is
+              // why these did not read as tabs.
+              indicatorSize: TabBarIndicatorSize.tab,
+              tabs: [
+                if (!_isLanding)
+                  const Tab(
+                    child: Tooltip(
+                      message: 'Flyability forecast by hour by day',
+                      child: Text('Forecast', style: TextStyle(fontSize: 12)),
+                    ),
+                  ),
+                // One tab per contributing guide, named. The old single
+                // unlabelled tab held ParaglidingEarth data without saying
+                // so, and a launch can now come from more than one guide -
+                // which disagree on names, ratings and sometimes position.
+                for (final source in _sourceTabs)
+                  Tab(
+                    child: Tooltip(
+                      message: _sourceTooltip(source.provider),
+                      child: Text(
+                        Guides.labelOf(source.provider),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  if (!_isLanding) _buildWeatherTab(windDirections),
+                  for (final source in _sourceTabs) _buildSourceTab(source),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   /// The closure warning, above everything else on the page.
-  ///
-  /// Shared by both layouts - the tabbed page and the plain scroll view a
-  /// site with no guide entry gets.
   List<Widget> _buildHeaderContent(String name, List<String> windDirections) {
     return [
       // Closure notice, above everything else.
@@ -997,13 +980,18 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     );
   }
 
-  /// What can be flown here, as the guide lists it.
+  /// What can be flown here, as ParaglidingEarth lists it.
   ///
-  /// Kept out of the site-type icon's tooltip deliberately: the argument for
-  /// showing the verdict applies here too - a tooltip needs a hover.
-  Widget? _buildCharacteristicsLine() {
-    if (_detailedData == null) return null;
-
+  /// This sat in the header until the header became catalogue-only. It is the
+  /// one thing the header showed that no column of the catalogue carries -
+  /// PGE publishes these flags, the other guides have nothing comparable, and
+  /// the producer does not resolve them. So rather than the header claiming a
+  /// fact one guide happens to hold, it sits with the rest of that guide's
+  /// live prose, in that guide's tab, where its provenance is the tab's name.
+  ///
+  /// Still not a tooltip on the site-type icon, for the reason it left one:
+  /// a tooltip needs a hover a phone does not have.
+  List<Widget> _buildCharacteristicsSection() {
     const flags = {
       'paragliding': 'Paragliding',
       'hanggliding': 'Hang Gliding',
@@ -1019,26 +1007,32 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
       for (final entry in flags.entries)
         if (_detailedData?[entry.key]?.toString() == '1') entry.value,
     ];
-    if (characteristics.isEmpty) return null;
+    if (characteristics.isEmpty) return const [];
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 4.0),
-      child: Text(
-        characteristics.join(', '),
-        // Capped: it is the least important line in the header and, with
-        // every flag set, the tallest - it was pushing the tabs down two
-        // lines to list what the site allows.
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              fontSize: 11,
-              fontWeight: FontWeight.w300,
-            ),
+    return [
+      Row(
+        children: [
+          Icon(Icons.paragliding, size: 18, color: Colors.grey[300]),
+          const SizedBox(width: 8),
+          Text(
+            'Characteristics',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[300],
+                ),
+          ),
+        ],
       ),
-    );
+      const SizedBox(height: 8),
+      Text(
+        characteristics.join(', '),
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+      const SizedBox(height: 16),
+    ];
   }
 
-  List<Widget> _buildOverviewContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText, String? thermalFlag, String? soaringFlag, String? xcFlag) {
+  List<Widget> _buildOverviewContent(double latitude, double longitude, int? altitude, String? siteType, List<String> windDirections, int? flightCount) {
     // The two figures this screen actually shows, so the drop between them
     // cannot contradict either.
     //
@@ -1051,10 +1045,13 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     // The remaining datum risk is upstream's and stays upstream's: Site Guide
     // publishes some above-ground heights as though they were AMSL, which is
     // an open issue in the pipeline and not something to paper over here.
-    final launchAltitude = altitude ?? _detailedData?['takeoff_altitude'];
-    final landingAltitude = _landings.isNotEmpty
-        ? _landings.first.altitude
-        : _detailedData?['landing_altitude'];
+    //
+    // Only on a launch: `_related` holds landings there, but launches on a
+    // landing's page, and "height above the launch" is not a figure anyone
+    // wants.
+    final launchAltitude = altitude;
+    final landingAltitude =
+        !_isLanding && _related.isNotEmpty ? _related.first.altitude : null;
     final drop = heightAboveLanding(launchAltitude, landingAltitude);
 
     return [
@@ -1093,14 +1090,15 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                 // valley where PGE's is 436m AMSL. The unit is written out
                 // rather than left to the tooltip, which a phone cannot hover.
                 //
-                // The catalogue first, the live lookup only as a fallback.
+                // The catalogue, and nothing else.
                 //
-                // This was the other way round, which quietly overruled the
-                // producer on every merged launch: it decides which guide wins
-                // a field, and for Abendberg that is DHV's 1823m, while PGE's
-                // record says 1830m and was what showed. The app is not
-                // supposed to second-guess that - and the fallback still
-                // matters, for a flown site with no catalogue row at all.
+                // This was once the live lookup first, which quietly overruled
+                // the producer on every merged launch: it decides which guide
+                // wins a field, and for Abendberg that is DHV's 1823m, while
+                // PGE's record says 1830m and was what showed. #358 put the
+                // catalogue in front; the fallback behind it is gone now too,
+                // so a launch shows one guide's figure or no figure - never a
+                // second guide's, under an attribution naming the first.
                 if (launchAltitude != null)
                   _iconFact(
                     Icons.terrain,
@@ -1135,72 +1133,22 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
               ],
             ),
 
-            // What the guide says about this landing. Shown in the header
-            // rather than behind a tab: it is the reason the page exists, and
-            // "only land on the leased paddock" is not something to make a
-            // pilot go looking for.
-            if (_isLanding && (_effectiveSite?.description ?? '').isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                _effectiveSite!.description ?? '',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-
             // Landing information, from the catalogue.
             //
-            // This works offline and for launches PGE has never described - the
-            // block below it can only speak for a launch with a `pge:` token,
-            // which is why a DHV-only or ANSG-only site showed no landing at
-            // all before. Shown in place of that block, never beside it, so one
-            // field is not listed twice at two different altitudes.
-            if (_landings.isNotEmpty) ...[
+            // This works offline and for launches PGE has never described - a
+            // DHV-only or ANSG-only site showed no landing at all before it.
+            //
+            // There used to be a live-PGE fallback underneath, for launches the
+            // catalogue has no landing for. It has been removed, and it costs
+            // nothing: the producer already federates PGE's own `landing{}`
+            // blob into landing rows, so where the catalogue has none PGE has
+            // none either - measured over a sample of launches missing a
+            // catalogue landing, not one had a live landing altitude. What the
+            // fallback could still do was mix PGE's landing into a national
+            // guide's launch, at two different datums.
+            if (_related.isNotEmpty) ...[
               const SizedBox(height: 6),
-              _buildLandingsSection(latitude, longitude),
-            ]
-            // Landing information row (if available)
-            else if (_detailedData?['landing_altitude'] != null || _detailedData?['landing_description'] != null || _detailedData?['landing_lat'] != null) ...[
-              const SizedBox(height: 6),
-              // Wrap for the same reason as the launch line above, which was
-              // fixed for this and left its sibling as a Row - and a Row
-              // overflows with stripes rather than flowing.
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 12,
-                runSpacing: 4,
-                children: [
-                  Text(
-                    'Landing:',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  // Landing altitude, same datum and same label as the launch
-                  if (_detailedData?['landing_altitude'] != null)
-                    _iconFact(
-                      Icons.terrain,
-                      '${_detailedData!['landing_altitude']} m AMSL',
-                      tooltip: 'Altitude above mean sea level',
-                    ),
-                  // Map icon for landing - uses landing coordinates if available
-                  InkWell(
-                    onTap: () {
-                      final landingLat = double.tryParse(_detailedData?['landing_lat']?.toString() ?? '');
-                      final landingLng = double.tryParse(_detailedData?['landing_lng']?.toString() ?? '');
-                      if (landingLat != null && landingLng != null) {
-                        _launchMap(landingLat, landingLng);
-                      } else {
-                        _launchMap(latitude, longitude);
-                      }
-                    },
-                    child: const Icon(
-                      Icons.map,
-                      size: 16,
-                      color: Colors.blue,
-                    ),
-                  ),
-                ],
-              ),
+              _buildRelatedSection(latitude, longitude),
             ],
 
             // Flight count (for local sites) - only show if present
@@ -1231,9 +1179,9 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   Widget _buildSourceTab(({String provider, String id}) source) {
     if (source.provider == 'pge') return _buildTakeoffTab();
 
-    final url = _sourceUrl(source.provider, source.id);
+    final url = _sourceUrl(source.provider);
     final site = _effectiveSite;
-    final fullName = _sourceFullName(source.provider);
+    final fullName = Guides.fullNameOf(source.provider);
     if (site == null) return const SizedBox.shrink();
 
     return _scrollableTab(
@@ -1281,7 +1229,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                 OutlinedButton.icon(
                   onPressed: () => _launchUrl(url),
                   icon: const Icon(Icons.open_in_new, size: 16),
-                  label: Text('Open in ${_sourceLabel(source.provider)}'),
+                  label: Text('Open in ${Guides.labelOf(source.provider)}'),
                 ),
             ],
           ),
@@ -1316,11 +1264,11 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     }
     if (primary == provider) {
       return 'The name, wind and position below are as '
-          '${_sourceFullName(provider)} records this $thing.';
+          '${Guides.fullNameOf(provider)} records this $thing.';
     }
     return 'Also describes this $thing. The name, wind and position below are '
-        'as ${_sourceFullName(primary)} records it - open '
-        '${_sourceLabel(provider)} for its own.';
+        'as ${Guides.fullNameOf(primary)} records it - open '
+        '${Guides.labelOf(provider)} for its own.';
   }
 
   Widget _sourceDetailRow(String label, String value) => Padding(
@@ -1353,6 +1301,12 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
           else if (_loadingError != null)
             Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
           else if (_detailedData != null) ...[
+            // ===== CHARACTERISTICS SECTION =====
+            // First: what can be flown here at all, before the prose about
+            // how. Moved out of the header, which now shows only what the
+            // producer resolved - see _buildCharacteristicsSection.
+            ..._buildCharacteristicsSection(),
+
             // ===== TAKEOFF SECTION =====
             Row(
               children: [
@@ -1603,38 +1557,30 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
           // permits this use on condition the source is credited wherever the
           // content is shown. Outside the _detailedData branch for the same
           // reason as the link below: the tab is ParaglidingEarth's either way.
-          const SizedBox(height: 16),
-          Text.rich(
-            TextSpan(
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey,
-                  ),
-              children: [
-                const TextSpan(text: 'Site data © ParaglidingEarth, licensed '),
-                TextSpan(
-                  text: 'CC BY-SA 3.0',
-                  style: const TextStyle(
-                    color: Colors.blue,
-                    decoration: TextDecoration.underline,
-                  ),
-                  recognizer: TapGestureRecognizer()
-                    ..onTap = () => _launchUrl(
-                        'https://creativecommons.org/licenses/by-sa/3.0/'),
-                ),
-              ],
-            ),
-          ),
+          //
+          // Both the guide and its licence come from the published registry.
+          // They were written out here, which meant the app asserting a
+          // licence on a guide's behalf - fine while it was right, and one
+          // release from being wrong. A guide that publishes no terms shows
+          // none rather than borrowing this one.
+          ..._guideAttribution('pge'),
 
-          // Link out from the tab, matching the other guides. It sits outside
-          // the _detailedData branch so it is still there when the fetch
-          // failed or the site has no detail - which is when you most want to
-          // go and look.
-          if (_detailedData?['pge_link'] != null) ...[
+          // Link out from the tab, built the same way as every other guide's.
+          // Outside the _detailedData branch so it survives a failed fetch,
+          // which is when you most want to go and look.
+          //
+          // This used to use `_detailedData['pge_link']`, synthesised from
+          // `int.tryParse` of the PGE source id. That parse fails on a landing,
+          // whose id is its takeoff's with `-lz` appended - so the button
+          // simply disappeared from every PGE landing page rather than pointing
+          // anywhere. The registry addresses a page by `site_group`, which
+          // holds the takeoff's id, so those pages get a working link.
+          if (_sourceUrl('pge') != null) ...[
             const SizedBox(height: 16),
             OutlinedButton.icon(
-              onPressed: () => _launchUrl(_detailedData!['pge_link']),
+              onPressed: () => _launchUrl(_sourceUrl('pge')!),
               icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('Open in PGE'),
+              label: Text('Open in ${Guides.labelOf('pge')}'),
             ),
           ],
           ],
@@ -1796,128 +1742,6 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     }
   }
 
-
-  List<Widget> _buildSimpleContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText, String? description) {
-    return [
-      // Simple layout for local sites or sites without detailed data
-      
-      // Location info
-      if (region != null || country != null) ...[
-        Row(
-          children: [
-            const Icon(Icons.location_on, size: 20, color: Colors.grey),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                [region, country].where((s) => s != null && s.isNotEmpty).join(', '),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-      ],
-      
-      // Altitude
-      if (altitude != null) ...[
-        Row(
-          children: [
-            const Icon(Icons.terrain, size: 20, color: Colors.grey),
-            const SizedBox(width: 8),
-            Text(
-              '${altitude}m altitude',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-      ],
-      
-      // Distance
-      if (distanceText != null) ...[
-        Row(
-          children: [
-            const Icon(Icons.straighten, size: 20, color: Colors.grey),
-            const SizedBox(width: 8),
-            Text(
-              '$distanceText away',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-      ],
-      
-      // Flight count (for local sites)
-      if (flightCount != null && flightCount > 0) ...[
-        Row(
-          children: [
-            const Icon(Icons.flight, size: 20, color: Colors.grey),
-            const SizedBox(width: 8),
-            Text(
-              '$flightCount ${flightCount == 1 ? 'flight' : 'flights'} logged',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-      ],
-      
-      // Site type (for API sites)
-      if (siteType != null) ...[
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            const Icon(Icons.info_outline, size: 20, color: Colors.grey),
-            const SizedBox(width: 8),
-            Text(
-              'Type: ${_formatSiteType(siteType)}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ],
-      
-      // Wind directions (for API sites)
-      if (windDirections.isNotEmpty) ...[
-        const SizedBox(height: 8),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(Icons.air, size: 20, color: Colors.grey),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Wind: ${windDirections.join(', ')}',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-      
-      // Description (fallback for local sites)
-      if (description != null && description.isNotEmpty) ...[
-        const SizedBox(height: 16),
-        Text(
-          'Description',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          description,
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      ],
-    ];
-  }
-  
   String _formatSiteType(String siteType) {
     switch (siteType.toLowerCase()) {
       case 'launch':
@@ -1933,8 +1757,13 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
 
   // _getSiteTypeIcon and _buildSiteCharacteristicsTooltip went with the
   // glyphs before "Launch" and "Landing". The tooltip listed the site's
-  // characteristics, which _buildCharacteristicsLine now shows outright -
-  // it had been computing that string for a hover no phone can perform.
+  // characteristics, which the PGE tab now shows outright - it had been
+  // computing that string for a hover no phone can perform.
+  //
+  // _buildSimpleContent went with the live lookup the header used to wait on.
+  // It was a second, differently-styled header ("436m altitude" where the real
+  // one says "436 m AMSL") shown only in the gap before PGE answered, and it
+  // was the only reader of region, rating and distance-from-user.
 
   /// Build clickable text that turns URLs into links
   Widget _buildLinkableText(String text) {

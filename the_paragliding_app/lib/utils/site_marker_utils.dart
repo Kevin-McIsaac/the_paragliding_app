@@ -9,6 +9,16 @@ class SiteMarkerUtils {
   static const double siteMarkerSize = 42.0;
   static const double siteMarkerIconSize = 36.0;
   static const double launchMarkerSize = 25.0;
+
+  // A catalogue landing, drawn deliberately smaller than a launch.
+  //
+  // It used to be drawn at siteMarkerSize, the same weight as a launch, which
+  // made the eye rank the two equally. They are not equal on this map: you
+  // choose a launch, and its landing follows from that choice. Two thirds the
+  // size, and the muted slate below, is enough to say "supporting information"
+  // without making it hard to find when you are looking for one.
+  static const double landingMarkerSize = 28.0;
+  static const double landingMarkerIconSize = 22.0;
   
   // Site status colors (for other screens)
   static const Color flownSiteColor = Color(0xFF0047AB);     // Sites with logged flights (cobalt blue)
@@ -26,7 +36,10 @@ class SiteMarkerUtils {
   // orange, red and blue all mean "can I fly here today", and a landing has no
   // wind directions to answer that with. It is told apart by *shape* - a flag
   // rather than a pin - so its colour is free to say nothing at all.
-  static const Color landingSiteColor = Color(0xFF455A64);
+  //
+  // Blue-grey 400 rather than 700: a landing recedes behind the launches the
+  // map is for. See landingMarkerSize.
+  static const Color landingSiteColor = Color(0xFF78909C);
 
   // Launch/landing colors (flight track endpoints, not catalogue rows)
   static const Color launchColor = Colors.green;
@@ -45,33 +58,67 @@ class SiteMarkerUtils {
   // Static methods for commonly used non-const objects
   static Border get _whiteCircleBorder => Border.all(color: Colors.white, width: 2);
   
-  /// Create a site marker icon with consistent styling
+  /// How a site type is drawn: glyph, and the two sizes of the stacked pair.
+  ///
+  /// One answer in one place. The glyph, the sizes and the colour used to be
+  /// spread over two icon builders, an `if` at the map's call site, and a
+  /// hand-written legend row that repeated all three a third time - so
+  /// "landings are flags" was stated four times and could have been changed in
+  /// three of them without the fourth noticing.
+  ///
+  /// A landing is smaller because it is supporting information: you choose a
+  /// launch, and its landing follows from that choice.
+  static ({IconData glyph, double size, double iconSize}) markerShapeFor(
+      String? siteType) {
+    return siteType == 'landing'
+        ? (
+            glyph: Icons.flag,
+            size: landingMarkerSize,
+            iconSize: landingMarkerIconSize
+          )
+        : (
+            glyph: Icons.location_on,
+            size: siteMarkerSize,
+            iconSize: siteMarkerIconSize
+          );
+  }
+
+  /// Create a site marker icon with consistent styling.
+  ///
+  /// [siteType] picks the glyph and its size; everything else about the marker
+  /// is identical, which is the point - a landing is a site drawn with a
+  /// different symbol, not a different kind of thing. Defaults to a launch, so
+  /// the display-only maps that have no site type keep the pin they had.
   static Widget buildSiteMarkerIcon({
     required Color color,
+    String? siteType,
     bool showBorder = false,
     Color borderColor = Colors.white,
     double borderWidth = 2.0,
   }) {
+    final shape = markerShapeFor(siteType);
+
     return Stack(
       alignment: Alignment.center,
       children: [
-        // White outline
-        const Icon(
-          Icons.location_on,
+        // White outline - what keeps the marker legible against terrain, so it
+        // scales with the glyph rather than being fixed.
+        Icon(
+          shape.glyph,
           color: Colors.white,
-          size: siteMarkerSize,
+          size: shape.size,
         ),
         // Colored marker
         Icon(
-          Icons.location_on,
+          shape.glyph,
           color: color,
-          size: siteMarkerIconSize,
+          size: shape.iconSize,
         ),
         // Optional border for special states
         if (showBorder)
           Container(
-            width: siteMarkerSize + (borderWidth * 2),
-            height: siteMarkerSize + (borderWidth * 2),
+            width: shape.size + (borderWidth * 2),
+            height: shape.size + (borderWidth * 2),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(color: borderColor, width: borderWidth),
@@ -155,23 +202,11 @@ class SiteMarkerUtils {
     );
   }
   
-  /// A catalogue landing site, as drawn on the sites map.
-  ///
-  /// A flag, so it reads as somewhere to put down rather than another hill to
-  /// launch from. Landings are a third of the catalogue and sit a median 1.7km
-  /// from their launch, so at any useful zoom they are mixed in with launches
-  /// and have to be distinguishable at a glance.
-  static Widget buildLandingSiteMarkerIcon({
-    Color color = landingSiteColor,
-  }) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        const Icon(Icons.flag, color: Colors.white, size: siteMarkerSize),
-        Icon(Icons.flag, color: color, size: siteMarkerIconSize - 6),
-      ],
-    );
-  }
+  // buildLandingSiteMarkerIcon is gone: it was buildSiteMarkerIcon with a
+  // different glyph, chosen by an `if` wherever a marker was built. A landing
+  // is still a flag - so it reads as somewhere to put down rather than another
+  // hill to launch from - but that is now one line in markerShapeFor rather
+  // than a second builder to keep in step with the first.
 
   /// Create a launch marker with consistent styling
   static Widget buildLaunchMarkerIcon({
@@ -356,11 +391,16 @@ class SiteMarkerUtils {
               const SizedBox(height: 4),
             ],
             if (showSites) ...[
-              buildLegendItem(context, Icons.location_on, flownSiteColor, 'Flown Sites'),
+              // Glyphs from markerShapeFor, so a legend cannot describe a
+              // marker the map no longer draws.
+              buildLegendItem(context, markerShapeFor('launch').glyph,
+                  flownSiteColor, 'Flown Sites'),
               const SizedBox(height: 4),
-              buildLegendItem(context, Icons.location_on, newSiteColor, 'New Sites'),
+              buildLegendItem(context, markerShapeFor('launch').glyph,
+                  newSiteColor, 'New Sites'),
               const SizedBox(height: 4),
-              buildLegendItem(context, Icons.flag, landingSiteColor, 'Landings'),
+              buildLegendItem(context, markerShapeFor('landing').glyph,
+                  landingSiteColor, 'Landings'),
             ],
             // Add additional legend items if provided
             if (additionalLegendItems != null && additionalLegendItems.isNotEmpty) ...[

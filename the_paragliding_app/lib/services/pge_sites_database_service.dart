@@ -206,9 +206,11 @@ class PgeSitesDatabaseService {
       //
       // Named site_group because `group` is a SQL keyword.
       await _addColumnIfMissing(db, _pgeSitesTable, 'site_group', 'TEXT');
-      // What a guide says about a landing, verbatim - the rules a visiting
-      // pilot cannot infer. Populated for landings only; a launch's prose is
-      // long and is still looked up live when the site is opened.
+      // Landing prose, no longer imported - the producer stopped emitting the
+      // column once a landing became a link to its guide's own page. The column
+      // stays because dropping one in SQLite is a table rebuild for no gain: it
+      // simply stops being written, and an upgraded database keeps whatever it
+      // last held until that row is next updated.
       await _addColumnIfMissing(db, _pgeSitesTable, 'notes', 'TEXT');
       // Which guide's record supplied this row's name, wind and position.
       //
@@ -527,24 +529,25 @@ class PgeSitesDatabaseService {
           // favourite goes with the deleted row, and every `sites.catalog_ref`
           // pointing at it dangles for good, because the old key is never
           // emitted again. Precedence therefore only keys rows that are new.
-          // Three rules, in this order, and the order is the point:
+          // Two rules, in this order, and the order is the point:
           //
           //  1. a row this database already holds keeps the key it is stored
           //     under, whatever the catalogue now says. Re-keying is a delete
           //     plus an insert, which takes the favourite with it and dangles
           //     every sites.catalog_ref for good;
-          //  2. otherwise the key the producer emitted. It decides, so that one
-          //     side owns the policy - and it derives it from the same
-          //     precedence this app used to apply itself;
-          //  3. otherwise derive it, for a catalogue published before the column
-          //     existed. That is the bundled asset of an older release, so it is
-          //     the offline path rather than a hypothetical.
+          //  2. otherwise the key the producer emitted. It decides, and there is
+          //     no third rule: this used to fall back to deriving one from
+          //     `source` with a precedence list hand-copied from the producer's,
+          //     for a catalogue published before the column existed. Two lists
+          //     that must agree is not a guarantee, and disagreeing re-keys a
+          //     launch - rule 1's failure, arriving by another road. A snapshot
+          //     with no `ref` is rejected at download instead, so a row reaching
+          //     here without one is a bug, counted as unkeyable rather than
+          //     guessed at.
           final tokens = CatalogRef.tokensOf(siteData['source'] as String?);
           final held = tokens.where(priorRefs.contains);
-          final ref = held.isNotEmpty
-              ? held.first
-              : (siteData['ref'] as String?) ??
-                  CatalogRef.fromSource(siteData['source'] as String?);
+          final ref =
+              held.isNotEmpty ? held.first : (siteData['ref'] as String?);
           if (ref == null) {
             unkeyable++;
             continue;
@@ -564,8 +567,8 @@ class PgeSitesDatabaseService {
             INSERT INTO $_pgeSitesTable
               (ref, provider, name, longitude, latitude, altitude, country,
                wind_n, wind_ne, wind_e, wind_se, wind_s, wind_sw, wind_w, wind_nw,
-               source, closed, site_type, tow, site_group, notes, primary_source)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               source, closed, site_type, tow, site_group, primary_source)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(ref) DO UPDATE SET
               provider = excluded.provider,
               name = excluded.name,
@@ -582,7 +585,6 @@ class PgeSitesDatabaseService {
               site_type = excluded.site_type,
               tow = excluded.tow,
               site_group = excluded.site_group,
-              notes = excluded.notes,
               primary_source = excluded.primary_source
           ''', [
             ref,
@@ -605,7 +607,6 @@ class PgeSitesDatabaseService {
             siteData['site_type'],
             siteData['tow'] ?? 0,
             siteData['site_group'],
-            siteData['notes'],
             siteData['primary'],
           ]);
         }
@@ -839,7 +840,6 @@ class PgeSitesDatabaseService {
     }
   }
 
-  /// Find nearest site to coordinates
   /// The landings that serve a launch, nearest first.
   ///
   /// Joined on the group the guides publish, never on distance. A landing sits
@@ -849,7 +849,28 @@ class PgeSitesDatabaseService {
   ///
   /// One landing commonly serves several launches (28.5% of DHV's do), and one
   /// launch can have several: the tokens are a set intersection, not a key.
-  Future<List<ParaglidingSite>> getLandingsForSite(ParaglidingSite site) async {
+  Future<List<ParaglidingSite>> getLandingsForSite(ParaglidingSite site) =>
+      _sitesSharingGroup(site, siteType: 'landing');
+
+  /// The launches a landing serves, nearest first - the same join read the
+  /// other way.
+  ///
+  /// The relationship the guides publish is symmetric, so a landing's page can
+  /// say what it is for rather than only being reachable from a launch that
+  /// already knew.
+  Future<List<ParaglidingSite>> getLaunchesForLanding(ParaglidingSite site) =>
+      _sitesSharingGroup(site, siteType: 'launch');
+
+  /// Sites of [siteType] sharing a `site_group` token with [site], nearest
+  /// first.
+  ///
+  /// One implementation for both directions: the tokens, the SQL and the
+  /// distance sort are identical and only the type filter differs, so two
+  /// copies could only drift.
+  Future<List<ParaglidingSite>> _sitesSharingGroup(
+    ParaglidingSite site, {
+    required String siteType,
+  }) async {
     final tokens = CatalogRef.tokensOf(site.siteGroup);
     if (tokens.isEmpty) return const [];
 
@@ -867,18 +888,16 @@ class PgeSitesDatabaseService {
         SELECT s.*, COALESCE(cc.name, s.country) as country_name
         FROM $_pgeSitesTable s
         LEFT JOIN $_countryCodesTable cc ON UPPER(s.country) = cc.code
-        WHERE COALESCE(s.site_type, 'launch') = 'landing' AND ($clause)
-      ''', [for (final token in tokens) '%;$token;%']);
+        WHERE COALESCE(s.site_type, 'launch') = ? AND ($clause)
+      ''', [siteType, for (final token in tokens) '%;$token;%']);
 
-      final landings =
-          results.map((row) => _mapRowToParaglidingSite(row)).toList()
-            ..sort((a, b) => a
-                .distanceTo(site.latitude, site.longitude)
-                .compareTo(b.distanceTo(site.latitude, site.longitude)));
-      return landings;
+      return results.map((row) => _mapRowToParaglidingSite(row)).toList()
+        ..sort((a, b) => a
+            .distanceTo(site.latitude, site.longitude)
+            .compareTo(b.distanceTo(site.latitude, site.longitude)));
     } catch (error, stackTrace) {
       LoggingService.error(
-          '[PGE_SITES_DB] Landings query failed', error, stackTrace);
+          '[PGE_SITES_DB] Group query failed for $siteType', error, stackTrace);
       return const [];
     }
   }
@@ -1012,24 +1031,7 @@ class PgeSitesDatabaseService {
 
   /// Convert database row to ParaglidingSite model
   ParaglidingSite _mapRowToParaglidingSite(Map<String, dynamic> row) {
-    // Build wind directions list
-    final windDirections = <String>[];
-    final windMap = {
-      'N': row['wind_n'] ?? 0,
-      'NE': row['wind_ne'] ?? 0,
-      'E': row['wind_e'] ?? 0,
-      'SE': row['wind_se'] ?? 0,
-      'S': row['wind_s'] ?? 0,
-      'SW': row['wind_sw'] ?? 0,
-      'W': row['wind_w'] ?? 0,
-      'NW': row['wind_nw'] ?? 0,
-    };
-
-    windMap.forEach((direction, value) {
-      if (value != null && value >= 1) {
-        windDirections.add(direction);
-      }
-    });
+    final windDirections = ParaglidingSite.windDirectionsFrom(row);
 
     return ParaglidingSite(
       // The catalogue row's identity is its ref, not its rowid: the rowid comes
@@ -1041,9 +1043,10 @@ class PgeSitesDatabaseService {
       latitude: (row['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (row['longitude'] as num?)?.toDouble() ?? 0.0,
       altitude: row['altitude'] as int?,  // Now stored in database
-      // What the guide says about this place. Populated for landings; a
-      // launch's prose still comes from the live lookup when one is opened.
-      description: row['notes'] as String? ?? '',
+      // Not read from `notes` any more - the producer no longer publishes it,
+      // and nothing in the app displayed a catalogue row's prose once landings
+      // became links. A live PGE lookup still fills this for a launch.
+      description: null,
       windDirections: windDirections,
       // Null on rows imported before the producer emitted the column, and
       // those are launches - the catalogue held nothing else.

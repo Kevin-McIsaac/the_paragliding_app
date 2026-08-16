@@ -254,7 +254,16 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     return presentation;
   }
 
-  /// Build markers for clustering with site data preserved
+  /// Build markers for clustering with site data preserved.
+  ///
+  /// Landings are in here with the launches, and were briefly not: they were
+  /// pulled into a sibling layer so a launch's landing was always visible.
+  /// Looked at on a real map that was worse than the problem - a third of the
+  /// catalogue is landings, so an Alpine viewport drew 78 of them and the
+  /// launches it exists to show could not be read through them. A landing
+  /// follows from the launch you pick, and the launch's own page lists it with
+  /// a distance and a link. Above `disableClusteringAtZoom` they draw
+  /// individually anyway, which is the zoom where the question is real.
   List<Marker> _buildClusterableMarkers() {
     return widget.sites.map((site) {
       final presentation = _getSiteMarkerPresentation(site);
@@ -274,13 +283,10 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
                 message: presentation.tooltip ?? '',
                 child: Opacity(
                   opacity: presentation.opacity,
-                  child: site.siteType == 'landing'
-                      ? SiteMarkerUtils.buildLandingSiteMarkerIcon(
-                          color: presentation.color,
-                        )
-                      : SiteMarkerUtils.buildSiteMarkerIcon(
-                          color: presentation.color,
-                        ),
+                  child: SiteMarkerUtils.buildSiteMarkerIcon(
+                    color: presentation.color,
+                    siteType: site.siteType,
+                  ),
                 ),
               ),
               SiteMarkerUtils.buildSiteLabel(
@@ -489,9 +495,12 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       const SizedBox(height: 4),
       // Last, and with a different icon: the four above are one scale - can I
       // fly here now - and a landing is not a point on it.
+      //
+      // Glyph taken from markerShapeFor rather than named here, so the legend
+      // cannot end up describing a marker the map no longer draws.
       SiteMarkerUtils.buildLegendItem(
         context,
-        Icons.flag,
+        SiteMarkerUtils.markerShapeFor('landing').glyph,
         SiteMarkerUtils.landingSiteColor,
         'Landing',
       ),

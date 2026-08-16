@@ -6,6 +6,9 @@ import 'package:the_paragliding_app/data/models/paragliding_site.dart';
 import 'package:the_paragliding_app/presentation/screens/site_details_screen.dart';
 import 'package:the_paragliding_app/services/paragliding_earth_api.dart';
 import 'package:the_paragliding_app/services/pge_sites_database_service.dart';
+import 'package:the_paragliding_app/services/pge_sites_download_service.dart';
+
+import 'helpers/test_helpers.dart';
 
 /// The site details header states a launch altitude, a landing altitude and the
 /// drop between them. All three come out of one ParaglidingEarth response, and
@@ -93,6 +96,8 @@ const _onlyTheSecondLaunchHasALanding = '''
 ''';
 
 void main() {
+  setUpAll(TestHelpers.initializeDatabaseForTesting);
+
   group('landing belongs to the takeoff it was asked for', () {
     test('takes the matching landing, not the document\'s first', () {
       final details = ParaglidingEarthApi.parseSiteDetails(
@@ -222,23 +227,51 @@ void main() {
     });
   });
 
+  // ===========================================================================
+  // Whose figures the header prints.
+  //
+  // Both altitudes and the drop between them are the catalogue's, and only the
+  // catalogue's. The header used to fall back to the live ParaglidingEarth
+  // lookup for the landing, which put one guide's figure under an attribution
+  // naming another - and, where the producer had chosen a national guide, at a
+  // different datum.
+  //
+  // So the mock deliberately *disagrees* with the catalogue in both tests
+  // below. A figure only PGE published appearing on screen is the failure.
+  // ===========================================================================
   group('the header as a pilot reads it', () {
-    setUp(() async {
-      // The page reads favourites out of the catalogue table on open.
+    /// The catalogue as the producer publishes it, through the real parser and
+    /// the real import - nothing here hand-writes a database row.
+    ///
+    /// Must be called inside `runAsync`: this is real database I/O, and real
+    /// I/O never completes on a widget test's fake clock.
+    Future<ParaglidingSite> importAndRead(String csv, String ref) async {
       await PgeSitesDatabaseService.instance.initializeTables();
+      final snapshot = PgeSitesDownloadService.parseCsvContent(csv);
+      expect(snapshot.skipped, 0, reason: 'the fixture must parse completely');
+      expect(
+        await PgeSitesDatabaseService.instance.importSitesData(rows: snapshot.rows),
+        isTrue,
+      );
+      final site = await PgeSitesDatabaseService.instance.getSiteByRef(ref);
+      return site!;
+    }
+
+    void mockPge(String body) {
       ParaglidingEarthApi.debugSetOfflineMode(offline: false);
       ParaglidingEarthApi.debugHttpClient = MockClient(
-        (request) async => http.Response(_brauneckWithItsLanding, 200,
+        (request) async => http.Response(body, 200,
             headers: {'content-type': 'application/xml; charset=utf-8'}),
       );
-    });
+    }
 
-    tearDown(() {
-      ParaglidingEarthApi.debugHttpClient = null;
-    });
-
-    testWidgets('launch and landing state the datum, with the drop between',
-        (tester) async {
+    /// Pump the page and let its catalogue reads finish.
+    ///
+    /// The landings join is real I/O, which does not advance on fake time, so
+    /// it is drained inside `runAsync` before the frames that render it. The
+    /// weather fetches fail in a test binding and spin forever, so
+    /// pumpAndSettle is no use - the frames are pumped by hand.
+    Future<void> pumpSite(WidgetTester tester, ParaglidingSite site) async {
       // A Pixel 9 in logical pixels, as in site_details_layout_test.
       tester.view.physicalSize = const Size(411, 923);
       tester.view.devicePixelRatio = 1.0;
@@ -246,26 +279,33 @@ void main() {
 
       await tester.pumpWidget(MaterialApp(
         home: SiteDetailsScreen(
-          paraglidingSite: ParaglidingSite(
-            id: 10727,
-            name: 'Brauneck',
-            latitude: 47.6634,
-            longitude: 11.5233,
-            altitude: 1541,
-            siteType: 'launch',
-            windDirections: const ['N', 'NE'],
-            source: 'pge:8612',
-          ),
+          paraglidingSite: site,
           maxWindSpeed: 25,
           cautionWindSpeed: 15,
         ),
       ));
 
-      // The weather fetches fail in a test binding and spin forever, so
-      // pumpAndSettle is no use - the frames are pumped by hand.
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+
       for (var i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 200));
       }
+    }
+
+    tearDown(() {
+      ParaglidingEarthApi.debugHttpClient = null;
+    });
+
+    testWidgets('launch and landing state the datum, with the drop between',
+        (tester) async {
+      // PGE says the landing is at 999m. The catalogue says 718m, and the
+      // catalogue is what the producer resolved.
+      mockPge(_brauneckWithAContradictingLanding);
+      final site =
+          await tester.runAsync(() => importAndRead(_brauneckCatalogue, 'pge:8612'));
+      await pumpSite(tester, site!);
 
       expect(find.text('1541 m AMSL'), findsOneWidget);
       expect(find.text('718 m AMSL'), findsOneWidget);
@@ -274,9 +314,57 @@ void main() {
       expect(find.text('Landing:'), findsOneWidget);
       expect(find.byTooltip('Height above the landing area'), findsOneWidget);
       expect(find.byTooltip('Altitude above mean sea level'), findsNWidgets(2));
+
+      expect(find.text('999 m AMSL'), findsNothing,
+          reason: 'the live lookup does not get to overrule the producer');
+      expect(find.text('542 m'), findsNothing,
+          reason: 'nor to change the drop by supplying the figure under it');
+    });
+
+    testWidgets('a launch the catalogue has no landing for shows none',
+        (tester) async {
+      // The removed fallback: PGE offers a landing at 718m and the catalogue
+      // has none. Showing it would credit the producer's chosen guide with a
+      // figure it never published.
+      //
+      // This costs less than it looks. The producer already federates PGE's
+      // own landing blob into landing rows, so a launch with no catalogue
+      // landing is overwhelmingly a launch PGE has no landing for either.
+      mockPge(_brauneckUnderTheSecondId);
+      final site = await tester.runAsync(
+          () => importAndRead(_brauneckCatalogueNoLanding, 'pge:8613'));
+      await pumpSite(tester, site!);
+
+      expect(find.text('1541 m AMSL'), findsOneWidget,
+          reason: 'the launch itself is unaffected');
+      expect(find.text('718 m AMSL'), findsNothing,
+          reason: 'the figure only PGE published');
+      expect(find.text('Landing:'), findsNothing);
+      expect(find.byTooltip('Height above the landing area'), findsNothing);
     });
   });
 }
+
+/// Brauneck as the producer publishes it: the launch, and the landing that
+/// shares its site group. Columns are the published header, in order.
+const _catalogueHeader = 'id,ref,name,longitude,latitude,altitude,country,'
+    'wind_n,wind_ne,wind_e,wind_se,wind_s,wind_sw,wind_w,wind_nw,'
+    'source,closed,site_type,tow,site_group,notes,primary';
+
+const _brauneckLaunchRow = '1,pge:8612,Brauneck,11.5233,47.6634,1541,de,'
+    '1,1,0,0,0,0,0,1,pge:8612,,launch,0,pge:8612,,pge';
+
+const _brauneckCatalogue = '$_catalogueHeader\n'
+    '$_brauneckLaunchRow\n'
+    '2,pge:8612-lz,Hangglider Landing,11.5641,47.6798,718,de,'
+    '0,0,0,0,0,0,0,0,pge:8612-lz,,landing,0,pge:8612,,pge\n';
+
+/// The same launch under a second id. Distinct on purpose: the API caches site
+/// details for 15 minutes and has no test hook to clear them, so sharing an id
+/// would let one test's mocked response answer the other's fetch.
+const _brauneckCatalogueNoLanding = '$_catalogueHeader\n'
+    '1,pge:8613,Brauneck,11.5233,47.6634,1541,de,'
+    '1,1,0,0,0,0,0,1,pge:8613,,launch,0,pge:8613,,pge\n';
 
 /// Brauneck, above Lenggries - launch 1541m, landing 718m, so an 823m drop.
 /// Trimmed from the live response for `lat=47.6634&lng=11.5233&distance=0.5`.
@@ -303,3 +391,15 @@ const _brauneckWithItsLanding = '''
   </landing>
 </search>
 ''';
+
+/// The same response with the landing moved to 999m - a figure the catalogue
+/// never publishes, so seeing it on screen means the live lookup was read.
+final _brauneckWithAContradictingLanding = _brauneckWithItsLanding
+    .replaceAll('<landing_altitude>718', '<landing_altitude>999');
+
+/// The same response under the second id, still offering its 718m landing.
+/// The ids must match the catalogue row's `source`, or the lookup finds no
+/// record and the test proves nothing - PGE has to be offering a landing for
+/// "it is not shown" to mean anything.
+final _brauneckUnderTheSecondId =
+    _brauneckWithItsLanding.replaceAll('8612', '8613');

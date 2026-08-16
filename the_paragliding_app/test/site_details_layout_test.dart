@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:the_paragliding_app/data/models/guide.dart';
 import 'package:the_paragliding_app/data/models/paragliding_site.dart';
 import 'package:the_paragliding_app/presentation/screens/site_details_screen.dart';
 import 'package:the_paragliding_app/services/pge_sites_database_service.dart';
@@ -26,6 +27,9 @@ void main() {
   setUp(() async {
     // The page reads favourites out of the catalogue table on open.
     await PgeSitesDatabaseService.instance.initializeTables();
+    // Tab names come from the registry the producer publishes, so without it
+    // the tabs read `pge` and `ansg` rather than `PGE` and `ANSG`.
+    await Guides.load();
   });
 
   /// Pump the page on a phone-shaped screen and let its loads fail.
@@ -160,6 +164,12 @@ void main() {
   });
 
   group('a landing', () {
+    // A landing opens the same screen a launch does. The one thing it cannot
+    // answer is whether you can fly today, and that is the only thing this
+    // screen withholds from it.
+    //
+    // Its sibling test asserted the guide's prose in the header, and stays
+    // deleted: `notes` is no longer shipped in the catalogue at all.
     final landing = ParaglidingSite(
       name: 'Rofan Feldererfeld Landeplatz',
       latitude: 47.423078,
@@ -167,18 +177,7 @@ void main() {
       siteType: 'landing',
       altitude: 560,
       source: 'dhv:1234-rofan-feldererfeld-landeplatz',
-      description:
-          'LZ at the lake is reserved for SIV seminars! Use only official LZ.',
     );
-
-    testWidgets('shows what the guide says about it', (tester) async {
-      // The reason the page exists. A landing point answers "where"; this
-      // answers "and what am I allowed to do there", which a visiting pilot
-      // cannot infer and which keeps them out of trouble with a landowner.
-      await pumpPage(tester, which: landing);
-
-      expect(find.textContaining('reserved for SIV seminars'), findsOneWidget);
-    });
 
     testWidgets('offers no forecast, because it has no wind', (tester) async {
       // Shown anyway, a forecast built from no wind directions does not read
@@ -187,6 +186,15 @@ void main() {
       await pumpPage(tester, which: landing);
 
       expect(find.text('Forecast'), findsNothing);
+    });
+
+    testWidgets('keeps the guide tab it is described by', (tester) async {
+      // The rest of the page is a site like any other: the guide that
+      // published it, named, with a way out to its own write-up.
+      await pumpPage(tester, which: landing);
+
+      expect(find.text('DHV'), findsOneWidget);
+      expect(find.text('560 m AMSL'), findsOneWidget);
     });
   });
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../data/models/guide.dart';
 import '../../utils/build_info.dart';
 import '../widgets/common/app_attribution_link.dart';
 
@@ -246,33 +247,35 @@ class _AboutScreenState extends State<AboutScreen> {
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 12),
-                    AppAttributionLink.standard(
-                      url: 'https://paraglidingearth.com',
-                      icon: Icons.web,
-                      text: 'ParaglidingEarth.com',
-                    ),
-                    // ParaglidingEarth states its licence; the Australian
-                    // National Site Guide publishes none, so it is credited
-                    // without one rather than being given a licence it has
-                    // never claimed.
-                    Padding(
-                      padding: const EdgeInsets.only(left: 28, top: 4),
-                      child: AppAttributionLink.compact(
-                        url: 'https://creativecommons.org/licenses/by-sa/3.0/',
-                        icon: Icons.copyright,
-                        text: 'Database licensed CC BY-SA 3.0',
+                    // Every guide the catalogue federates from, named by the
+                    // producer that federates them.
+                    //
+                    // This was three hand-written entries, which is a list of
+                    // credits maintained separately from the list of sources
+                    // actually shipped - so a guide added upstream went
+                    // uncredited until someone noticed, and the DHV link here
+                    // had already drifted from the one the site page used.
+                    // A guide states its own licence or states none: PGE
+                    // publishes CC BY-SA 3.0, DHV and the Australian guide
+                    // publish no terms with their exports, and crediting them
+                    // under a licence they never claimed would be worse than
+                    // crediting them without one.
+                    for (final guide in Guides.all) ...[
+                      AppAttributionLink.standard(
+                        url: guide.homepage,
+                        icon: Icons.web,
+                        text: guide.fullName,
                       ),
-                    ),
-                    AppAttributionLink.standard(
-                      url: 'https://siteguide.org.au',
-                      icon: Icons.web,
-                      text: 'Australian National Site Guide',
-                    ),
-                    AppAttributionLink.standard(
-                      url: 'https://service.dhv.de/db3/gelaende',
-                      icon: Icons.web,
-                      text: 'DHV Geländedatenbank',
-                    ),
+                      if (guide.hasLicence)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 28, top: 4),
+                          child: AppAttributionLink.compact(
+                            url: guide.licenceUrl,
+                            icon: Icons.copyright,
+                            text: 'Database licensed ${guide.licence}',
+                          ),
+                        ),
+                    ],
                   ],
                 ),
               ),

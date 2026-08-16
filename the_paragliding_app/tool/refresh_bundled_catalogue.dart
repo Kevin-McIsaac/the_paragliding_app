@@ -23,6 +23,16 @@ const String catalogUrl = 'https://raw.githubusercontent.com/Kevin-McIsaac/'
 
 const String assetPath = 'assets/data/world_sites_extracted.csv.gz';
 
+/// Who each `source` prefix is - the guide's label, full name, site-page
+/// template and licence. Published beside the rows and refreshed with them,
+/// because the two have to agree: a catalogue naming a guide the registry does
+/// not describe shows a bare `ffvl` on a tab with no link out. Small enough to
+/// ship uncompressed.
+const String guidesUrl = 'https://raw.githubusercontent.com/Kevin-McIsaac/'
+    'paragliding_site_federation/main/app/guides.json';
+
+const String guidesAssetPath = 'assets/data/guides.json';
+
 /// The columns the app's parser reads. A refresh that dropped one would leave
 /// a fresh install worse off than before it ran.
 const List<String> required = [
@@ -36,20 +46,38 @@ const List<String> required = [
   'site_group',
 ];
 
-Future<String> _load(List<String> args) async {
-  if (args.isNotEmpty) return File(args.first).readAsStringSync();
-
-  stderr.writeln('Fetching $catalogUrl');
+Future<String> _fetch(String url) async {
+  stderr.writeln('Fetching $url');
   final client = HttpClient();
   try {
-    final response = await (await client.getUrl(Uri.parse(catalogUrl))).close();
+    final response = await (await client.getUrl(Uri.parse(url))).close();
     if (response.statusCode != 200) {
-      throw StateError('catalogue fetch failed: HTTP ${response.statusCode}');
+      throw StateError('fetch failed: HTTP ${response.statusCode} for $url');
     }
     return response.transform(utf8.decoder).join();
   } finally {
     client.close();
   }
+}
+
+Future<String> _load(List<String> args) async {
+  if (args.isNotEmpty) return File(args.first).readAsStringSync();
+  return _fetch(catalogUrl);
+}
+
+/// The registry, from the sibling file of whatever catalogue was loaded - so a
+/// local `sites.csv` refreshes from the `guides.json` next to it rather than
+/// silently pairing a local catalogue with the published registry.
+Future<String> _loadGuides(List<String> args) async {
+  if (args.isNotEmpty) {
+    final sibling = File(
+        '${File(args.first).parent.path}${Platform.pathSeparator}guides.json');
+    if (!sibling.existsSync()) {
+      throw StateError('no guides.json beside ${args.first}');
+    }
+    return sibling.readAsStringSync();
+  }
+  return _fetch(guidesUrl);
 }
 
 void main(List<String> args) async {
@@ -74,4 +102,24 @@ void main(List<String> args) async {
 
   stderr.writeln('Wrote ${rows.length} rows to $assetPath '
       '(${before ~/ 1024} KB -> ${asset.lengthSync() ~/ 1024} KB)');
+
+  // Validated the same way and for the same reason: an error page decodes to a
+  // String perfectly happily, and a registry that lost a guide would show a
+  // bare prefix on a tab rather than failing.
+  final guides = jsonDecode(await _loadGuides(args)) as Map<String, dynamic>;
+  final catalogueProviders = {
+    for (final row in rows)
+      for (final token in (row['source'] ?? '').toString().split(';'))
+        if (token.contains(':')) token.split(':').first,
+  };
+  final undescribed = catalogueProviders.difference(guides.keys.toSet());
+  if (undescribed.isNotEmpty) {
+    throw StateError('guides.json describes no $undescribed, which the '
+        'catalogue names - refusing to ship a nameless guide');
+  }
+
+  File(guidesAssetPath).writeAsStringSync(
+      '${const JsonEncoder.withIndent('  ').convert(guides)}\n');
+  stderr.writeln('Wrote ${guides.length} guides to $guidesAssetPath '
+      '(${guides.keys.join(', ')})');
 }

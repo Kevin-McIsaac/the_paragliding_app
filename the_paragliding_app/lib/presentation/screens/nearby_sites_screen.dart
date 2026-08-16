@@ -1211,6 +1211,11 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       'rating': site.rating,
       'has_flights': hasFlights,
     });
+
+    // No branch on site type. A landing opens the same screen a launch does -
+    // it is a site, told apart by its glyph, not a different kind of thing.
+    // That screen decides for itself what a landing has no answer for, which
+    // is the forecast and the flyability verdict and nothing else.
     _showSiteDetails(paraglidingSite: site);
   }
 

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:the_paragliding_app/data/models/guide.dart';
 import 'package:the_paragliding_app/data/models/paragliding_site.dart';
 import 'package:the_paragliding_app/presentation/screens/site_details_screen.dart';
 import 'package:the_paragliding_app/services/pge_sites_database_service.dart';
@@ -98,7 +99,14 @@ void main() {
     File('test/fixtures/site_metadata_baseline.json').readAsStringSync(),
   ) as Map<String, dynamic>)['launches'] as Map<String, dynamic>;
 
-  setUpAll(TestHelpers.initializeDatabaseForTesting);
+  setUpAll(() async {
+    await TestHelpers.initializeDatabaseForTesting();
+    // Guide labels, links and attribution come from the bundled registry the
+    // producer publishes, so a page rendered without it shows raw `source`
+    // prefixes - `dhv` where a pilot should read `DHV`. The app loads this at
+    // startup; a test that renders the page has to do the same.
+    await Guides.load();
+  });
 
   // ===========================================================================
   // The mechanics, on rows written to make each step visible.
@@ -291,6 +299,50 @@ void main() {
 
       expect(landings.map((l) => l.name), ['Landing']);
       expect(heightAboveLanding(launch.altitude, landings.first.altitude), 600);
+    });
+
+    test('and the same group names the launches a landing serves', () async {
+      // The join read the other way, which is what a landing's own page shows.
+      // The relationship the guides publish is symmetric; the app used to be
+      // able to walk it in one direction only, so a landing was reachable but
+      // could not say what it was for.
+      //
+      // Same fixture shape as above: the landing is keyed under DHV and its
+      // launch under PGE, so this crosses providers too.
+      await importCatalogue(csvOf([
+        csvRow(
+          ref: 'pge:1',
+          name: 'Launch',
+          source: 'dhv:9-startplatz;pge:1',
+          altitude: 1000,
+          siteGroup: 'dhv:9;pge:1',
+        ),
+        csvRow(
+          ref: 'dhv:9-landeplatz',
+          name: 'Landing',
+          source: 'dhv:9-landeplatz',
+          siteType: 'landing',
+          altitude: 400,
+          siteGroup: 'dhv:9',
+        ),
+        csvRow(
+          ref: 'pge:2',
+          name: 'Someone else’s launch',
+          source: 'pge:2',
+          altitude: 900,
+          siteGroup: 'pge:2',
+          longitude: 8.0001,
+          latitude: 47.0001, // nearer, and not this landing's
+        ),
+      ]));
+
+      final landing = await PgeSitesDatabaseService.instance
+          .getSiteByRef('dhv:9-landeplatz');
+      final launches = await PgeSitesDatabaseService.instance
+          .getLaunchesForLanding(landing!);
+
+      expect(launches.map((l) => l.name), ['Launch'],
+          reason: 'the nearer launch shares no group token with it');
     });
 
     test('a landing above its launch produces no height, rather than a negative',

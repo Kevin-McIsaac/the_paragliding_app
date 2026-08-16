@@ -710,13 +710,14 @@ class DatabaseService {
       SELECT
         s.*,
         COUNT(f.id) as flight_count,
-        pge.name as pge_name,
         pge.wind_n, pge.wind_ne, pge.wind_e, pge.wind_se,
         pge.wind_s, pge.wind_sw, pge.wind_w, pge.wind_nw, pge.site_type,
         pge.altitude as pge_altitude,
         pge.country as pge_country,
         pge.source as pge_source,
-        pge.closed as pge_closed
+        pge.closed as pge_closed,
+        pge.site_group as pge_site_group,
+        pge.primary_source as pge_primary_source
       FROM sites s
       LEFT JOIN pge_sites pge ON s.catalog_ref = pge.ref
       LEFT JOIN flights f ON f.launch_site_id = s.id
@@ -728,24 +729,7 @@ class DatabaseService {
     // Convert results to ParaglidingSite objects
     final sites = <ParaglidingSite>[];
     for (final row in results) {
-      // Build wind directions from PGE data
-      final windDirections = <String>[];
-      final windMap = {
-        'N': row['wind_n'],
-        'NE': row['wind_ne'],
-        'E': row['wind_e'],
-        'SE': row['wind_se'],
-        'S': row['wind_s'],
-        'SW': row['wind_sw'],
-        'W': row['wind_w'],
-        'NW': row['wind_nw'],
-      };
-
-      windMap.forEach((direction, value) {
-        if (value != null && (value as int) >= 1) {
-          windDirections.add(direction);
-        }
-      });
+      final windDirections = ParaglidingSite.windDirectionsFrom(row);
 
       sites.add(ParaglidingSite(
         id: row['id'] as int?,
@@ -770,6 +754,15 @@ class DatabaseService {
         // added here as well as to the catalogue.
         source: row['pge_source'] as String?,
         closed: row['pge_closed'] as String?,
+        // Which site this launch belongs to, and which guide supplied the
+        // record. Both were missing, and both are visible on the site page: no
+        // site_group means the landings join finds nothing, so a flown site
+        // showed no landing area and no height-above-landing, and no
+        // primary_source means the guide tab says the catalogue never recorded
+        // which guide won. A live-PGE fallback used to hide the first of those;
+        // the header reads only the catalogue now, so the gap is on screen.
+        siteGroup: row['pge_site_group'] as String?,
+        primarySource: row['pge_primary_source'] as String?,
       ));
     }
 
@@ -1524,24 +1517,7 @@ class DatabaseService {
 
       final sites = <ParaglidingSite>[];
       for (final row in results) {
-        // Build wind directions from PGE data
-        final windDirections = <String>[];
-        final windMap = {
-          'N': row['wind_n'],
-          'NE': row['wind_ne'],
-          'E': row['wind_e'],
-          'SE': row['wind_se'],
-          'S': row['wind_s'],
-          'SW': row['wind_sw'],
-          'W': row['wind_w'],
-          'NW': row['wind_nw'],
-        };
-
-        windMap.forEach((direction, value) {
-          if (value != null && (value as int) >= 1) {
-            windDirections.add(direction);
-          }
-        });
+        final windDirections = ParaglidingSite.windDirectionsFrom(row);
 
         sites.add(ParaglidingSite(
           id: row['id'] as int?,
