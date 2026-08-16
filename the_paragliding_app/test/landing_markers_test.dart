@@ -34,7 +34,8 @@ void main() {
     siteType: 'landing',
   );
 
-  Future<void> pumpMap(WidgetTester tester, List<ParaglidingSite> sites) async {
+  Future<void> pumpMap(WidgetTester tester, List<ParaglidingSite> sites,
+      {double zoom = 12}) async {
     tester.view.physicalSize = const Size(411, 923);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -45,7 +46,7 @@ void main() {
           sites: sites,
           selectedDateTime: DateTime(2026, 8, 16, 12),
           initialCenter: const LatLng(-37.123, 145.413),
-          initialZoom: 12,
+          initialZoom: zoom,
           forecastEnabled: false,
           showUserLocation: false,
           weatherStationsEnabled: false,
@@ -64,8 +65,21 @@ void main() {
       (tester) async {
     await pumpMap(tester, [launch, landing]);
 
-    expect(find.text('Hang gliders'), findsOneWidget,
+    // The pin, not the name: below the detail zoom a landing draws its flag
+    // and nothing else, because 78 of them in one Alpine viewport buried the
+    // launches behind their labels. Found by its tooltip rather than its icon,
+    // because the legend carries a flag of its own.
+    expect(find.byTooltip('Landing site'), findsOneWidget,
         reason: 'the landing is drawn individually, not folded into a cluster');
+    expect(find.text('Hang gliders'), findsNothing,
+        reason: 'its name would collide with every other landing at this zoom');
+  });
+
+  testWidgets('and takes its name back once the map shows detail',
+      (tester) async {
+    await pumpMap(tester, [launch, landing], zoom: 15);
+
+    expect(find.text('Hang gliders'), findsOneWidget);
   });
 
   testWidgets('the launch beside it still clusters', (tester) async {

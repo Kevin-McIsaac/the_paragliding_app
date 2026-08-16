@@ -79,6 +79,18 @@ class NearbySitesMap extends BaseMapWidget {
 }
 
 class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
+  /// Where the map stops generalising: launches stop clustering here, and
+  /// landings gain their names here. One constant so the two cannot drift into
+  /// disagreeing about when the map is showing detail.
+  static const double _detailZoom = 14;
+
+  /// The zoom labels are decided from.
+  ///
+  /// Tracked in state rather than read off the controller, because
+  /// buildAdditionalLayers runs during build and the camera does not exist
+  /// until FlutterMap has mounted.
+  late double _zoom = widget.initialZoom;
+
   @override
   String get mapProviderKey => 'nearby_sites_map_provider';
 
@@ -128,6 +140,10 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
   @override
   void handleMapEvent(MapEvent event) {
     super.handleMapEvent(event);
+
+    if (event.camera.zoom != _zoom) {
+      setState(() => _zoom = event.camera.zoom);
+    }
 
     // Notify parent when bounds change - include MapEventMove for cluster zoom animations
     if (widget.onBoundsChanged != null &&
@@ -258,7 +274,15 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
   List<Marker> _buildClusterableMarkers() =>
       _buildSiteMarkers(widget.sites.where((s) => s.siteType != 'landing'));
 
-  /// The landings, which do not.
+  /// The landings, which do not - and which stay nameless until the map is
+  /// showing detail.
+  ///
+  /// Un-clustering them made all 78 in an Alpine viewport draw at once, and
+  /// their labels then collided with each other and buried the launches
+  /// behind them: 78 names competing to answer a question nobody had asked
+  /// yet. The pin is what was missing, not the name. Above [_detailZoom] -
+  /// where launches stop clustering, so the map has already committed to
+  /// detail - the names come back.
   ///
   /// They are a third of the catalogue and sit a median 1.7km from the launch
   /// they serve, so clustered they were reliably swallowed: at the zoom that
@@ -271,11 +295,16 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
   /// a marker out of a cluster is to keep it out of that list. Rendered as a
   /// sibling layer above the cluster layer, the same shape as the weather
   /// stations below.
-  List<Marker> _buildLandingMarkers() =>
-      _buildSiteMarkers(widget.sites.where((s) => s.siteType == 'landing'));
+  List<Marker> _buildLandingMarkers() => _buildSiteMarkers(
+        widget.sites.where((s) => s.siteType == 'landing'),
+        labelled: _zoom >= _detailZoom,
+      );
 
   /// Build markers with site data preserved
-  List<Marker> _buildSiteMarkers(Iterable<ParaglidingSite> sites) {
+  List<Marker> _buildSiteMarkers(
+    Iterable<ParaglidingSite> sites, {
+    bool labelled = true,
+  }) {
     return sites.map((site) {
       final presentation = _getSiteMarkerPresentation(site);
 
@@ -303,10 +332,11 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
                         ),
                 ),
               ),
-              SiteMarkerUtils.buildSiteLabel(
-                siteName: site.name,
-                flightCount: site.hasFlights ? site.flightCount : null,
-              ),
+              if (labelled)
+                SiteMarkerUtils.buildSiteLabel(
+                  siteName: site.name,
+                  flightCount: site.hasFlights ? site.flightCount : null,
+                ),
             ],
           ),
         ),
@@ -410,7 +440,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
         options: MarkerClusterLayerOptions(
           maxClusterRadius: 50,
           size: const Size(40, 40),
-          disableClusteringAtZoom: 14,
+          disableClusteringAtZoom: _detailZoom.toInt(),
           padding: const EdgeInsets.all(50),
           spiderfyCluster: true,
           zoomToBoundsOnClick: true,
