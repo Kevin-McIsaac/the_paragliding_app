@@ -840,7 +840,6 @@ class PgeSitesDatabaseService {
     }
   }
 
-  /// Find nearest site to coordinates
   /// The landings that serve a launch, nearest first.
   ///
   /// Joined on the group the guides publish, never on distance. A landing sits
@@ -850,7 +849,28 @@ class PgeSitesDatabaseService {
   ///
   /// One landing commonly serves several launches (28.5% of DHV's do), and one
   /// launch can have several: the tokens are a set intersection, not a key.
-  Future<List<ParaglidingSite>> getLandingsForSite(ParaglidingSite site) async {
+  Future<List<ParaglidingSite>> getLandingsForSite(ParaglidingSite site) =>
+      _sitesSharingGroup(site, siteType: 'landing');
+
+  /// The launches a landing serves, nearest first - the same join read the
+  /// other way.
+  ///
+  /// The relationship the guides publish is symmetric, so a landing's page can
+  /// say what it is for rather than only being reachable from a launch that
+  /// already knew.
+  Future<List<ParaglidingSite>> getLaunchesForLanding(ParaglidingSite site) =>
+      _sitesSharingGroup(site, siteType: 'launch');
+
+  /// Sites of [siteType] sharing a `site_group` token with [site], nearest
+  /// first.
+  ///
+  /// One implementation for both directions: the tokens, the SQL and the
+  /// distance sort are identical and only the type filter differs, so two
+  /// copies could only drift.
+  Future<List<ParaglidingSite>> _sitesSharingGroup(
+    ParaglidingSite site, {
+    required String siteType,
+  }) async {
     final tokens = CatalogRef.tokensOf(site.siteGroup);
     if (tokens.isEmpty) return const [];
 
@@ -868,18 +888,16 @@ class PgeSitesDatabaseService {
         SELECT s.*, COALESCE(cc.name, s.country) as country_name
         FROM $_pgeSitesTable s
         LEFT JOIN $_countryCodesTable cc ON UPPER(s.country) = cc.code
-        WHERE COALESCE(s.site_type, 'launch') = 'landing' AND ($clause)
-      ''', [for (final token in tokens) '%;$token;%']);
+        WHERE COALESCE(s.site_type, 'launch') = ? AND ($clause)
+      ''', [siteType, for (final token in tokens) '%;$token;%']);
 
-      final landings =
-          results.map((row) => _mapRowToParaglidingSite(row)).toList()
-            ..sort((a, b) => a
-                .distanceTo(site.latitude, site.longitude)
-                .compareTo(b.distanceTo(site.latitude, site.longitude)));
-      return landings;
+      return results.map((row) => _mapRowToParaglidingSite(row)).toList()
+        ..sort((a, b) => a
+            .distanceTo(site.latitude, site.longitude)
+            .compareTo(b.distanceTo(site.latitude, site.longitude)));
     } catch (error, stackTrace) {
       LoggingService.error(
-          '[PGE_SITES_DB] Landings query failed', error, stackTrace);
+          '[PGE_SITES_DB] Group query failed for $siteType', error, stackTrace);
       return const [];
     }
   }

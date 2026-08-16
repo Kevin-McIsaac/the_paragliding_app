@@ -283,13 +283,10 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
                 message: presentation.tooltip ?? '',
                 child: Opacity(
                   opacity: presentation.opacity,
-                  child: site.siteType == 'landing'
-                      ? SiteMarkerUtils.buildLandingSiteMarkerIcon(
-                          color: presentation.color,
-                        )
-                      : SiteMarkerUtils.buildSiteMarkerIcon(
-                          color: presentation.color,
-                        ),
+                  child: SiteMarkerUtils.buildSiteMarkerIcon(
+                    color: presentation.color,
+                    siteType: site.siteType,
+                  ),
                 ),
               ),
               SiteMarkerUtils.buildSiteLabel(
@@ -498,9 +495,12 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       const SizedBox(height: 4),
       // Last, and with a different icon: the four above are one scale - can I
       // fly here now - and a landing is not a point on it.
+      //
+      // Glyph taken from markerShapeFor rather than named here, so the legend
+      // cannot end up describing a marker the map no longer draws.
       SiteMarkerUtils.buildLegendItem(
         context,
-        Icons.flag,
+        SiteMarkerUtils.markerShapeFor('landing').glyph,
         SiteMarkerUtils.landingSiteColor,
         'Landing',
       ),

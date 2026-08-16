@@ -88,12 +88,16 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   /// the catalogue entry was passed in already.
   ParaglidingSite? _catalogSite;
 
-  /// The landings that serve this launch, from the catalogue.
+  /// The other half of this site's group: a launch's landings, or a landing's
+  /// launches.
+  ///
+  /// One field for both directions because it is one relationship, published by
+  /// the guides as a shared `site_group` and symmetric by nature. Which way it
+  /// is read follows from the open site's own type.
   ///
   /// Held rather than derived at build time because the join is a query. Empty
-  /// for a landing's own page, and for a catalogue published before the
-  /// producer emitted the grouping.
-  List<ParaglidingSite> _landings = const [];
+  /// for a catalogue published before the producer emitted the grouping.
+  List<ParaglidingSite> _related = const [];
 
   /// Whichever record actually describes this launch: the catalogue entry
   /// passed in, or the one a flown site is linked to.
@@ -104,14 +108,20 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   /// Falls back to a single ParaglidingEarth tab when the catalogue predates
   /// source tracking, so an older database still shows what it always did
   /// rather than losing the tab entirely.
-  // _isLanding, and the landing page it shaped, are gone. This screen assesses
-  // a launch - wind rose, flyability, forecast - and a landing answers none of
-  // those questions, so it had become a page of suppressions: no forecast tab,
-  // no verdict, no rose, with a paragraph of guide prose in their place.
-  //
-  // A landing is now a pin on the map and a row on its launch, and both link
-  // out to the guide's own page, which carries the hazards and access notes
-  // this app never shipped. See _buildLandingsSection.
+  /// A landing is reference information, not a site to assess.
+  ///
+  /// It has no wind directions, so the forecast table, the wind rose and the
+  /// flyability verdict have nothing to work from - shown anyway they would
+  /// read as "we checked and it is unflyable" rather than "this question does
+  /// not apply".
+  ///
+  /// That is the *only* thing this decides. Everything else about a landing -
+  /// its marker, its page, how it is reached, how it is queried - is a site
+  /// like any other, told apart by its glyph. This flag used to be read as
+  /// licence to suppress rather more, which is how the page ended up being a
+  /// launch page with the launch taken out; what it shows instead is the
+  /// launches it serves.
+  bool get _isLanding => _effectiveSite?.siteType == 'landing';
 
   List<({String provider, String id})> get _sourceTabs {
     final sources = _effectiveSite?.sources ?? const [];
@@ -168,9 +178,6 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     ];
   }
 
-  /// A landing's page on the guide that described it. See Guides.pageUrlFor.
-  String? _landingUrl(ParaglidingSite landing) => Guides.pageUrlFor(landing);
-
   /// This guide's page for the launch on screen.
   ///
   /// Takes the site rather than a `source` id, because the id that addresses a
@@ -194,7 +201,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     setState(() {
       _catalogSite = site;
       _tabController?.dispose();
-      _tabController = TabController(length: 1 + _sourceTabs.length, vsync: this);
+      _tabController = TabController(length: (_isLanding ? 0 : 1) + _sourceTabs.length, vsync: this);
     });
   }
 
@@ -208,11 +215,11 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   void initState() {
     super.initState();
     // Weather, plus one tab per contributing guide.
-    _tabController = TabController(length: 1 + _sourceTabs.length, vsync: this);
+    _tabController = TabController(length: (_isLanding ? 0 : 1) + _sourceTabs.length, vsync: this);
     // Resolve the catalogue entry first: it decides how many tabs there are,
     // and supplies the guide's own coordinates for the detail lookup.
     _loadCatalogSite().then((_) {
-      _loadLandings();
+      _loadRelated();
       return _loadSiteDetails();
     });
     _loadWindData();
@@ -363,31 +370,44 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     );
   }
 
-  /// The landings serving this launch, from the catalogue.
+  /// The other half of this site's group, from the catalogue.
   ///
-  /// Cheap and local, so it runs alongside the network fetch rather than after
-  /// it - a pilot at a launch site with no signal still gets this.
-  Future<void> _loadLandings() async {
+  /// A launch loads its landings; a landing loads the launches it serves. The
+  /// type inverts the query rather than blocking it, which is what gives a
+  /// landing's page something to be about.
+  ///
+  /// Cheap and local - one indexed read - so it runs alongside the network
+  /// fetch rather than after it.
+  Future<void> _loadRelated() async {
     final site = _effectiveSite;
-    if (site == null || site.siteType == 'landing') return;
+    if (site == null) return;
 
-    final landings =
-        await PgeSitesDatabaseService.instance.getLandingsForSite(site);
-    if (mounted && landings.isNotEmpty) {
-      setState(() => _landings = landings);
+    final service = PgeSitesDatabaseService.instance;
+    final related = site.siteType == 'landing'
+        ? await service.getLaunchesForLanding(site)
+        : await service.getLandingsForSite(site);
+    if (mounted && related.isNotEmpty) {
+      setState(() => _related = related);
     }
   }
 
-  /// The landings serving this launch, listed nearest first.
+  /// The other half of this site's group, listed nearest first.
   ///
-  /// Distance and bearing are shown because the landing is not in sight of the
-  /// launch - the median gap is 1.7km - so "where is it" is the first question
-  /// and a name alone does not answer it.
-  Widget _buildLandingsSection(double latitude, double longitude) {
+  /// On a launch these are its landings, labelled `Landing:`. On a landing they
+  /// are the launches it serves, labelled `Serves:` - the same rows read the
+  /// other way, which is what stops a landing's page being a launch page with
+  /// the launch bits hidden.
+  ///
+  /// Distance is shown because the two are not in sight of each other - the
+  /// median gap is 1.7km - so "where is it" is the first question and a name
+  /// alone does not answer it.
+  Widget _buildRelatedSection(double latitude, double longitude) {
+    final label = _isLanding ? 'Serves:' : 'Landing:';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final landing in _landings)
+        for (final other in _related)
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: Wrap(
@@ -396,72 +416,52 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
               runSpacing: 4,
               children: [
                 Text(
-                  _landings.length > 1 ? 'Landing:' : 'Landing:',
+                  label,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontWeight: FontWeight.w500,
                       ),
                 ),
-                // Out to the guide's own page for this landing.
-                //
-                // This used to push another copy of this screen, which could
-                // only show what the catalogue holds - a name, a height, and a
-                // paragraph of prose. The guide's page has the rest: the
-                // hazards, the access, who owns the paddock. So the link is a
-                // strict improvement on the copy, and the copy is gone from the
-                // catalogue with it.
+                // Opens that site's own page, whichever direction this is
+                // being read in. Both routes to a landing - this row and the
+                // map pin - now reach the same place, and the guide is one tab
+                // further on rather than something a name does silently.
                 //
                 // Altitude is conditional because 153 landings have none, one
                 // of them on Mt Broughton, which is where this started.
-                if (_landingUrl(landing) case final url?)
-                  InkWell(
-                    onTap: () => _launchUrl(url),
-                    // One text run, not a Row: inside a Wrap a Row is an
-                    // unbreakable unit, and "Rampa Evandro Bussolaro - Rosário"
-                    // plus an icon overflows the line rather than wrapping.
-                    // A WidgetSpan keeps the icon inline with the last word, so
-                    // it can never be orphaned onto a line of its own either.
-                    child: Text.rich(
-                      TextSpan(
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.blue,
-                              decoration: TextDecoration.underline,
-                            ),
-                        children: [
-                          TextSpan(text: landing.name),
-                          const WidgetSpan(
-                            alignment: PlaceholderAlignment.middle,
-                            child: Padding(
-                              padding: EdgeInsets.only(left: 3),
-                              child: Icon(Icons.open_in_new,
-                                  size: 12, color: Colors.blue),
-                            ),
-                          ),
-                        ],
+                InkWell(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => SiteDetailsScreen(
+                        site: null,
+                        paraglidingSite: other,
+                        maxWindSpeed: widget.maxWindSpeed,
+                        cautionWindSpeed: widget.cautionWindSpeed,
                       ),
                     ),
-                  )
-                else
-                  // No guide to send them to - a catalogue naming a guide this
-                  // release has never heard of. The name still belongs on the
-                  // row; it just is not a link.
-                  Text(
-                    landing.name,
-                    style: Theme.of(context).textTheme.bodySmall,
                   ),
-                if (landing.altitude != null)
+                  child: Text(
+                    other.name,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.blue,
+                          decoration: TextDecoration.underline,
+                        ),
+                  ),
+                ),
+                if (other.altitude != null)
                   _iconFact(
                     Icons.terrain,
-                    '${landing.altitude} m AMSL',
+                    '${other.altitude} m AMSL',
                     tooltip: 'Altitude above mean sea level',
                   ),
                 _iconFact(
                   Icons.straighten,
-                  _formatDistance(
-                      landing.distanceTo(latitude, longitude)),
-                  tooltip: 'Distance from the launch',
+                  _formatDistance(other.distanceTo(latitude, longitude)),
+                  tooltip: _isLanding
+                      ? 'Distance from the landing'
+                      : 'Distance from the launch',
                 ),
                 InkWell(
-                  onTap: () => _launchMap(landing.latitude, landing.longitude),
+                  onTap: () => _launchMap(other.latitude, other.longitude),
                   child: const Icon(Icons.map, size: 16, color: Colors.blue),
                 ),
               ],
@@ -707,7 +707,8 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     final String? siteType = catalogue?.siteType;
     final int? flightCount = widget.site?.flightCount;
 
-    final flyabilityLine = _buildFlyabilityLine(windDirections);
+    final flyabilityLine =
+        _isLanding ? null : _buildFlyabilityLine(windDirections);
 
     return Scaffold(
       appBar: AppBar(
@@ -793,12 +794,13 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
               // why these did not read as tabs.
               indicatorSize: TabBarIndicatorSize.tab,
               tabs: [
-                const Tab(
-                  child: Tooltip(
-                    message: 'Flyability forecast by hour by day',
-                    child: Text('Forecast', style: TextStyle(fontSize: 12)),
+                if (!_isLanding)
+                  const Tab(
+                    child: Tooltip(
+                      message: 'Flyability forecast by hour by day',
+                      child: Text('Forecast', style: TextStyle(fontSize: 12)),
+                    ),
                   ),
-                ),
                 // One tab per contributing guide, named. The old single
                 // unlabelled tab held ParaglidingEarth data without saying
                 // so, and a launch can now come from more than one guide -
@@ -819,7 +821,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildWeatherTab(windDirections),
+                  if (!_isLanding) _buildWeatherTab(windDirections),
                   for (final source in _sourceTabs) _buildSourceTab(source),
                 ],
               ),
@@ -1043,9 +1045,13 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     // The remaining datum risk is upstream's and stays upstream's: Site Guide
     // publishes some above-ground heights as though they were AMSL, which is
     // an open issue in the pipeline and not something to paper over here.
+    //
+    // Only on a launch: `_related` holds landings there, but launches on a
+    // landing's page, and "height above the launch" is not a figure anyone
+    // wants.
     final launchAltitude = altitude;
     final landingAltitude =
-        _landings.isNotEmpty ? _landings.first.altitude : null;
+        !_isLanding && _related.isNotEmpty ? _related.first.altitude : null;
     final drop = heightAboveLanding(launchAltitude, landingAltitude);
 
     return [
@@ -1140,9 +1146,9 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
             // catalogue landing, not one had a live landing altitude. What the
             // fallback could still do was mix PGE's landing into a national
             // guide's launch, at two different datums.
-            if (_landings.isNotEmpty) ...[
+            if (_related.isNotEmpty) ...[
               const SizedBox(height: 6),
-              _buildLandingsSection(latitude, longitude),
+              _buildRelatedSection(latitude, longitude),
             ],
 
             // Flight count (for local sites) - only show if present
@@ -1249,7 +1255,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   /// a broader claim would overstate what `primary` means - and the test that
   /// pins that distinction lives in the producer's repository.
   String _provenanceLine(String provider) {
-    const thing = 'launch';
+    final thing = _isLanding ? 'landing' : 'launch';
     final primary = _effectiveSite?.primarySource;
 
     if (primary == null) {

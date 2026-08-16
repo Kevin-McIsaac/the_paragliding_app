@@ -163,15 +163,39 @@ void main() {
     expect(find.byTooltip('Altitude above mean sea level'), findsOneWidget);
   });
 
-  // group('a landing') is gone with the landing page itself. Its two tests
-  // asserted the guide's prose in the header and the suppressed Forecast tab,
-  // which were the whole of what made a landing's page different from a
-  // launch's - and between them are why the page was worth deleting: it was
-  // this screen with its own subject removed.
-  //
-  // A landing is now a pin on the map and a row on its launch, both linking
-  // out to the guide. Where that link goes is covered by
-  // guides_registry_test.dart; that the row survives is covered by
-  // launch_landing_altitude_test.dart.
+  group('a landing', () {
+    // A landing opens the same screen a launch does. The one thing it cannot
+    // answer is whether you can fly today, and that is the only thing this
+    // screen withholds from it.
+    //
+    // Its sibling test asserted the guide's prose in the header, and stays
+    // deleted: `notes` is no longer shipped in the catalogue at all.
+    final landing = ParaglidingSite(
+      name: 'Rofan Feldererfeld Landeplatz',
+      latitude: 47.423078,
+      longitude: 11.74615,
+      siteType: 'landing',
+      altitude: 560,
+      source: 'dhv:1234-rofan-feldererfeld-landeplatz',
+    );
+
+    testWidgets('offers no forecast, because it has no wind', (tester) async {
+      // Shown anyway, a forecast built from no wind directions does not read
+      // as "this question does not apply" - it reads as "we checked, and it
+      // is unflyable".
+      await pumpPage(tester, which: landing);
+
+      expect(find.text('Forecast'), findsNothing);
+    });
+
+    testWidgets('keeps the guide tab it is described by', (tester) async {
+      // The rest of the page is a site like any other: the guide that
+      // published it, named, with a way out to its own write-up.
+      await pumpPage(tester, which: landing);
+
+      expect(find.text('DHV'), findsOneWidget);
+      expect(find.text('560 m AMSL'), findsOneWidget);
+    });
+  });
 }
 
