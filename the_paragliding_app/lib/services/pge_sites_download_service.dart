@@ -698,8 +698,10 @@ class PgeSitesDownloadService {
           // Which site this row belongs to, as `provider:parentId` tokens in
           // the same form as `source`. A landing shares one with its launch.
           'site_group': optional('site_group'),
-          // What a guide says about a landing, verbatim.
-          'notes': optional('notes'),
+          // No `notes`. The producer stopped emitting the column: a landing is
+          // a map pin and a row on its launch, both linking to the guide's own
+          // page, so 2,892 rows of prose nothing displayed were 19.7% of a
+          // catalogue a fresh install downloads and stores.
           // Which guide's record this row's name, wind and position came from.
           //
           // Not every field: the producer gap-fills altitude and notes from a

@@ -254,9 +254,29 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     return presentation;
   }
 
-  /// Build markers for clustering with site data preserved
-  List<Marker> _buildClusterableMarkers() {
-    return widget.sites.map((site) {
+  /// The launches, which cluster.
+  List<Marker> _buildClusterableMarkers() =>
+      _buildSiteMarkers(widget.sites.where((s) => s.siteType != 'landing'));
+
+  /// The landings, which do not.
+  ///
+  /// They are a third of the catalogue and sit a median 1.7km from the launch
+  /// they serve, so clustered they were reliably swallowed: at the zoom that
+  /// frames a launch its landing is off-screen, and at the zoom that includes
+  /// it both have merged into one numbered circle. A pilot asking "where do I
+  /// land" got a number.
+  ///
+  /// `flutter_map_marker_cluster` has no per-marker opt-out - `markers` is a
+  /// flat list and everything in it goes into the quadtree - so the way to keep
+  /// a marker out of a cluster is to keep it out of that list. Rendered as a
+  /// sibling layer above the cluster layer, the same shape as the weather
+  /// stations below.
+  List<Marker> _buildLandingMarkers() =>
+      _buildSiteMarkers(widget.sites.where((s) => s.siteType == 'landing'));
+
+  /// Build markers with site data preserved
+  List<Marker> _buildSiteMarkers(Iterable<ParaglidingSite> sites) {
+    return sites.map((site) {
       final presentation = _getSiteMarkerPresentation(site);
 
       return Marker(
@@ -331,13 +351,17 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
 
     // Check if any sites have no wind directions defined.
     //
-    // Landings never have any, and are a third of the catalogue - counted here
-    // they would fade almost every cluster on the map, turning a signal that
-    // means "this cluster hides a site we know nothing about" into background.
+    // The `siteType != 'landing'` half of this test is gone with the landings
+    // themselves: they are no longer clustered, so a cluster cannot contain one
+    // and there is nothing here to exclude. It existed because landings never
+    // have wind and, counted, would have faded almost every cluster - turning
+    // "this cluster hides a site we know nothing about" into background.
     final hasNoWindDirectionsSites = markers.any((marker) {
       if (marker.key is ValueKey<ParaglidingSite>) {
-        final site = (marker.key as ValueKey<ParaglidingSite>).value;
-        return site.siteType != 'landing' && site.windDirections.isEmpty;
+        return (marker.key as ValueKey<ParaglidingSite>)
+            .value
+            .windDirections
+            .isEmpty;
       }
       return false;
     });
@@ -380,7 +404,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
   List<Widget> buildAdditionalLayers() {
     final layers = <Widget>[];
 
-    // Site markers with clustering
+    // Launch markers, clustered.
     layers.add(
       MarkerClusterLayerWidget(
         options: MarkerClusterLayerOptions(
@@ -395,6 +419,11 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
         ),
       ),
     );
+
+    // Landings, above the clusters and never in one - see
+    // _buildLandingMarkers. Unconditional: a landing is not an overlay a pilot
+    // turns on, it is where the flight ends.
+    layers.add(MarkerLayer(markers: _buildLandingMarkers()));
 
     // User location marker
     if (widget.showUserLocation && widget.userLocation != null) {

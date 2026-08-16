@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import '../../services/logging_service.dart';
 import '../../utils/catalog_ref.dart';
+import 'paragliding_site.dart';
 
 /// Who a `source` prefix is, as the guide describes itself.
 ///
@@ -128,6 +129,27 @@ class Guides {
 
   /// Every guide, in the order the producer published them.
   static Iterable<Guide> get all => _guides.values;
+
+  /// The guide page for a catalogue row, attributed the way the header is.
+  ///
+  /// **`primarySource` first, then the row's own key.** Those disagree on every
+  /// one of the 283 landings two guides describe - `pge:6824-lz` is keyed `pge`
+  /// but its `primary` is `ansg`, and ANSG is the guide that supplied the name
+  /// being displayed. Sending a pilot to the guide whose figures are on screen
+  /// is the rule the header already follows; sending them to whichever guide
+  /// happens to own the key is not a rule, it is a coincidence.
+  ///
+  /// Falls back to the key's provider when `primary_source` is null, which
+  /// means a catalogue published before that column.
+  ///
+  /// Null when nothing resolves - an unknown guide, or a row whose `site_group`
+  /// does not name it. A link that 404s is worse than no link.
+  static String? pageUrlFor(ParaglidingSite site) {
+    final provider =
+        site.primarySource ?? CatalogRef.providerOf(site.catalogRef);
+    if (provider == null) return null;
+    return _guides[provider]?.siteUrl(site.siteGroup);
+  }
 
   /// The guide behind a `source` prefix, or null if the catalogue names one
   /// this release has never heard of.

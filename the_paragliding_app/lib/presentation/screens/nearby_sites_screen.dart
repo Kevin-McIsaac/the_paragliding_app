@@ -4,6 +4,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../data/models/guide.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/airspace_enums.dart';
 import '../../data/models/wind_data.dart';
@@ -1211,7 +1213,31 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       'rating': site.rating,
       'has_flights': hasFlights,
     });
+
+    // A landing has no page of its own any more. The site screen assesses a
+    // launch - wind rose, flyability, forecast - and a landing answers none of
+    // those, so it opens the guide that described it instead, which carries the
+    // hazards and access notes this app does not ship.
+    //
+    // Nothing happens when no URL resolves: an unknown guide, or a row whose
+    // `site_group` does not name it. Better than a link that 404s.
+    if (site.siteType == 'landing') {
+      final url = Guides.pageUrlFor(site);
+      if (url != null) _launchGuideUrl(url);
+      return;
+    }
+
     _showSiteDetails(paraglidingSite: site);
+  }
+
+  /// Open a guide's own page for a site.
+  Future<void> _launchGuideUrl(String url) async {
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      LoggingService.action('NearbySites', 'open_guide_page', {'url': url});
+    } catch (e) {
+      LoggingService.error('NearbySites: Could not launch $url', e);
+    }
   }
 
 

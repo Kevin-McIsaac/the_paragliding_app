@@ -104,14 +104,14 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   /// Falls back to a single ParaglidingEarth tab when the catalogue predates
   /// source tracking, so an older database still shows what it always did
   /// rather than losing the tab entirely.
-  /// A landing is reference information, not a site to assess.
-  ///
-  /// It has no wind directions, so the forecast table, the wind rose and the
-  /// flyability verdict have nothing to work from - shown anyway they would
-  /// read as "we checked and it is unflyable" rather than "this question does
-  /// not apply". What is left is what a pilot actually wants: where it is, how
-  /// high, and what the guide says about it.
-  bool get _isLanding => _effectiveSite?.siteType == 'landing';
+  // _isLanding, and the landing page it shaped, are gone. This screen assesses
+  // a launch - wind rose, flyability, forecast - and a landing answers none of
+  // those questions, so it had become a page of suppressions: no forecast tab,
+  // no verdict, no rose, with a paragraph of guide prose in their place.
+  //
+  // A landing is now a pin on the map and a row on its launch, and both link
+  // out to the guide's own page, which carries the hazards and access notes
+  // this app never shipped. See _buildLandingsSection.
 
   List<({String provider, String id})> get _sourceTabs {
     final sources = _effectiveSite?.sources ?? const [];
@@ -168,6 +168,9 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     ];
   }
 
+  /// A landing's page on the guide that described it. See Guides.pageUrlFor.
+  String? _landingUrl(ParaglidingSite landing) => Guides.pageUrlFor(landing);
+
   /// This guide's page for the launch on screen.
   ///
   /// Takes the site rather than a `source` id, because the id that addresses a
@@ -191,7 +194,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     setState(() {
       _catalogSite = site;
       _tabController?.dispose();
-      _tabController = TabController(length: (_isLanding ? 0 : 1) + _sourceTabs.length, vsync: this);
+      _tabController = TabController(length: 1 + _sourceTabs.length, vsync: this);
     });
   }
 
@@ -205,7 +208,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   void initState() {
     super.initState();
     // Weather, plus one tab per contributing guide.
-    _tabController = TabController(length: (_isLanding ? 0 : 1) + _sourceTabs.length, vsync: this);
+    _tabController = TabController(length: 1 + _sourceTabs.length, vsync: this);
     // Resolve the catalogue entry first: it decides how many tabs there are,
     // and supplies the guide's own coordinates for the detail lookup.
     _loadCatalogSite().then((_) {
@@ -398,29 +401,54 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                         fontWeight: FontWeight.w500,
                       ),
                 ),
-                // Tappable, because the rules live on the landing's own page
-                // and a name alone does not say there is more to read.
-                InkWell(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => SiteDetailsScreen(
-                        site: null,
-                        paraglidingSite: landing,
-                        maxWindSpeed: widget.maxWindSpeed,
-                        cautionWindSpeed: widget.cautionWindSpeed,
+                // Out to the guide's own page for this landing.
+                //
+                // This used to push another copy of this screen, which could
+                // only show what the catalogue holds - a name, a height, and a
+                // paragraph of prose. The guide's page has the rest: the
+                // hazards, the access, who owns the paddock. Linking there
+                // instead is both more and less than the app had, and the
+                // honest trade is stated in the producer's README - those
+                // rules are no longer readable without signal.
+                //
+                // Altitude is conditional because 153 landings have none, one
+                // of them on Mt Broughton, which is where this started.
+                if (_landingUrl(landing) case final url?)
+                  InkWell(
+                    onTap: () => _launchUrl(url),
+                    // One text run, not a Row: inside a Wrap a Row is an
+                    // unbreakable unit, and "Rampa Evandro Bussolaro - Rosário"
+                    // plus an icon overflows the line rather than wrapping.
+                    // A WidgetSpan keeps the icon inline with the last word, so
+                    // it can never be orphaned onto a line of its own either.
+                    child: Text.rich(
+                      TextSpan(
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.blue,
+                              decoration: TextDecoration.underline,
+                            ),
+                        children: [
+                          TextSpan(text: landing.name),
+                          const WidgetSpan(
+                            alignment: PlaceholderAlignment.middle,
+                            child: Padding(
+                              padding: EdgeInsets.only(left: 3),
+                              child: Icon(Icons.open_in_new,
+                                  size: 12, color: Colors.blue),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                  child: Text(
+                  )
+                else
+                  // No guide to send them to - a catalogue naming a guide this
+                  // release has never heard of. The name still belongs on the
+                  // row; it just is not a link.
+                  Text(
                     landing.name,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.blue,
-                          decoration: TextDecoration.underline,
-                        ),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
-                ),
-                if ((landing.description ?? '').isNotEmpty)
-                  const Icon(Icons.notes, size: 14, color: Colors.blue),
                 if (landing.altitude != null)
                   _iconFact(
                     Icons.terrain,
@@ -680,8 +708,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     final String? siteType = catalogue?.siteType;
     final int? flightCount = widget.site?.flightCount;
 
-    final flyabilityLine =
-        _isLanding ? null : _buildFlyabilityLine(windDirections);
+    final flyabilityLine = _buildFlyabilityLine(windDirections);
 
     return Scaffold(
       appBar: AppBar(
@@ -767,13 +794,12 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
               // why these did not read as tabs.
               indicatorSize: TabBarIndicatorSize.tab,
               tabs: [
-                if (!_isLanding)
-                  const Tab(
-                    child: Tooltip(
-                      message: 'Flyability forecast by hour by day',
-                      child: Text('Forecast', style: TextStyle(fontSize: 12)),
-                    ),
+                const Tab(
+                  child: Tooltip(
+                    message: 'Flyability forecast by hour by day',
+                    child: Text('Forecast', style: TextStyle(fontSize: 12)),
                   ),
+                ),
                 // One tab per contributing guide, named. The old single
                 // unlabelled tab held ParaglidingEarth data without saying
                 // so, and a launch can now come from more than one guide -
@@ -794,7 +820,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  if (!_isLanding) _buildWeatherTab(windDirections),
+                  _buildWeatherTab(windDirections),
                   for (final source in _sourceTabs) _buildSourceTab(source),
                 ],
               ),
@@ -1102,18 +1128,6 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
               ],
             ),
 
-            // What the guide says about this landing. Shown in the header
-            // rather than behind a tab: it is the reason the page exists, and
-            // "only land on the leased paddock" is not something to make a
-            // pilot go looking for.
-            if (_isLanding && (_effectiveSite?.description ?? '').isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                _effectiveSite!.description ?? '',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-
             // Landing information, from the catalogue.
             //
             // This works offline and for launches PGE has never described - a
@@ -1236,7 +1250,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   /// a broader claim would overstate what `primary` means - and the test that
   /// pins that distinction lives in the producer's repository.
   String _provenanceLine(String provider) {
-    final thing = _isLanding ? 'landing' : 'launch';
+    const thing = 'launch';
     final primary = _effectiveSite?.primarySource;
 
     if (primary == null) {

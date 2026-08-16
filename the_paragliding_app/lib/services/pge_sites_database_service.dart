@@ -206,9 +206,11 @@ class PgeSitesDatabaseService {
       //
       // Named site_group because `group` is a SQL keyword.
       await _addColumnIfMissing(db, _pgeSitesTable, 'site_group', 'TEXT');
-      // What a guide says about a landing, verbatim - the rules a visiting
-      // pilot cannot infer. Populated for landings only; a launch's prose is
-      // long and is still looked up live when the site is opened.
+      // Landing prose, no longer imported - the producer stopped emitting the
+      // column once a landing became a link to its guide's own page. The column
+      // stays because dropping one in SQLite is a table rebuild for no gain: it
+      // simply stops being written, and an upgraded database keeps whatever it
+      // last held until that row is next updated.
       await _addColumnIfMissing(db, _pgeSitesTable, 'notes', 'TEXT');
       // Which guide's record supplied this row's name, wind and position.
       //
@@ -565,8 +567,8 @@ class PgeSitesDatabaseService {
             INSERT INTO $_pgeSitesTable
               (ref, provider, name, longitude, latitude, altitude, country,
                wind_n, wind_ne, wind_e, wind_se, wind_s, wind_sw, wind_w, wind_nw,
-               source, closed, site_type, tow, site_group, notes, primary_source)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               source, closed, site_type, tow, site_group, primary_source)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(ref) DO UPDATE SET
               provider = excluded.provider,
               name = excluded.name,
@@ -583,7 +585,6 @@ class PgeSitesDatabaseService {
               site_type = excluded.site_type,
               tow = excluded.tow,
               site_group = excluded.site_group,
-              notes = excluded.notes,
               primary_source = excluded.primary_source
           ''', [
             ref,
@@ -606,7 +607,6 @@ class PgeSitesDatabaseService {
             siteData['site_type'],
             siteData['tow'] ?? 0,
             siteData['site_group'],
-            siteData['notes'],
             siteData['primary'],
           ]);
         }
@@ -1025,9 +1025,10 @@ class PgeSitesDatabaseService {
       latitude: (row['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (row['longitude'] as num?)?.toDouble() ?? 0.0,
       altitude: row['altitude'] as int?,  // Now stored in database
-      // What the guide says about this place. Populated for landings; a
-      // launch's prose still comes from the live lookup when one is opened.
-      description: row['notes'] as String? ?? '',
+      // Not read from `notes` any more - the producer no longer publishes it,
+      // and nothing in the app displayed a catalogue row's prose once landings
+      // became links. A live PGE lookup still fills this for a launch.
+      description: null,
       windDirections: windDirections,
       // Null on rows imported before the producer emitted the column, and
       // those are launches - the catalogue held nothing else.

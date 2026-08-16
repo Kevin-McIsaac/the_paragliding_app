@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:the_paragliding_app/data/models/guide.dart';
+import 'package:the_paragliding_app/data/models/paragliding_site.dart';
 import 'package:the_paragliding_app/presentation/screens/about_screen.dart';
 
 /// Who each `source` prefix is, and where its pages are.
@@ -68,6 +69,42 @@ void main() {
       expect(Guides.of('ansg')!.siteUrl('dhv:1443'), isNull);
       expect(Guides.of('pge')!.siteUrl(null), isNull);
       expect(Guides.of('pge')!.siteUrl(''), isNull);
+    });
+  });
+
+  group('which guide a row is sent to', () {
+    ParaglidingSite landing({String? primary, required String ref}) =>
+        ParaglidingSite(
+          name: 'Hang gliders',
+          latitude: -37.146638,
+          longitude: 145.405190,
+          siteType: 'landing',
+          catalogRef: ref,
+          siteGroup: 'ansg:201;pge:6824',
+          source: 'ansg:lz-117;pge:6824-lz',
+          primarySource: primary,
+        );
+
+    test('the guide whose figures are shown, not the one that owns the key', () {
+      // Mt Broughton's hang-glider landing, and the case that makes this a rule
+      // rather than a coincidence: it is keyed `pge` but ANSG supplied the name
+      // on screen. The two disagree on every one of the 283 landings that two
+      // guides describe, so picking the key's guide would send a pilot to the
+      // wrong write-up on all of them.
+      expect(Guides.pageUrlFor(landing(primary: 'ansg', ref: 'pge:6824-lz')),
+          'https://siteguide.org.au/sites/details/201');
+    });
+
+    test('falls back to the key when the catalogue never said', () {
+      // primary_source is null on every row of a catalogue published before the
+      // producer emitted it. Falling back keeps those rows linking somewhere
+      // real instead of nowhere.
+      expect(Guides.pageUrlFor(landing(primary: null, ref: 'pge:6824-lz')),
+          'https://www.paraglidingearth.com/?site=6824');
+    });
+
+    test('a guide this release has never heard of gets no link', () {
+      expect(Guides.pageUrlFor(landing(primary: 'ffvl', ref: 'ffvl:1')), isNull);
     });
   });
 

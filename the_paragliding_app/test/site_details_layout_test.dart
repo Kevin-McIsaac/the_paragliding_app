@@ -163,35 +163,15 @@ void main() {
     expect(find.byTooltip('Altitude above mean sea level'), findsOneWidget);
   });
 
-  group('a landing', () {
-    final landing = ParaglidingSite(
-      name: 'Rofan Feldererfeld Landeplatz',
-      latitude: 47.423078,
-      longitude: 11.74615,
-      siteType: 'landing',
-      altitude: 560,
-      source: 'dhv:1234-rofan-feldererfeld-landeplatz',
-      description:
-          'LZ at the lake is reserved for SIV seminars! Use only official LZ.',
-    );
-
-    testWidgets('shows what the guide says about it', (tester) async {
-      // The reason the page exists. A landing point answers "where"; this
-      // answers "and what am I allowed to do there", which a visiting pilot
-      // cannot infer and which keeps them out of trouble with a landowner.
-      await pumpPage(tester, which: landing);
-
-      expect(find.textContaining('reserved for SIV seminars'), findsOneWidget);
-    });
-
-    testWidgets('offers no forecast, because it has no wind', (tester) async {
-      // Shown anyway, a forecast built from no wind directions does not read
-      // as "this question does not apply" - it reads as "we checked, and it
-      // is unflyable".
-      await pumpPage(tester, which: landing);
-
-      expect(find.text('Forecast'), findsNothing);
-    });
-  });
+  // group('a landing') is gone with the landing page itself. Its two tests
+  // asserted the guide's prose in the header and the suppressed Forecast tab,
+  // which were the whole of what made a landing's page different from a
+  // launch's - and between them are why the page was worth deleting: it was
+  // this screen with its own subject removed.
+  //
+  // A landing is now a pin on the map and a row on its launch, both linking
+  // out to the guide. Where that link goes is covered by
+  // guides_registry_test.dart; that the row survives is covered by
+  // launch_landing_altitude_test.dart.
 }
 
