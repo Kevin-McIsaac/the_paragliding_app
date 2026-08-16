@@ -406,10 +406,9 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                 // This used to push another copy of this screen, which could
                 // only show what the catalogue holds - a name, a height, and a
                 // paragraph of prose. The guide's page has the rest: the
-                // hazards, the access, who owns the paddock. Linking there
-                // instead is both more and less than the app had, and the
-                // honest trade is stated in the producer's README - those
-                // rules are no longer readable without signal.
+                // hazards, the access, who owns the paddock. So the link is a
+                // strict improvement on the copy, and the copy is gone from the
+                // catalogue with it.
                 //
                 // Altitude is conditional because 153 landings have none, one
                 // of them on Mt Broughton, which is where this started.

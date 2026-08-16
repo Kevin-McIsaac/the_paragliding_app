@@ -4,18 +4,21 @@ import 'package:latlong2/latlong.dart';
 import 'package:the_paragliding_app/data/models/paragliding_site.dart';
 import 'package:the_paragliding_app/presentation/widgets/nearby_sites_map.dart';
 
-/// A landing must never be swallowed by a cluster.
+/// Landings cluster with launches, and that is deliberate.
 ///
-/// Landings are a third of the catalogue and sit a median 1.7km from the launch
-/// they serve, so clustered they were reliably invisible: at the zoom that
-/// frames a launch its landing is off-screen, and at the zoom that includes it
-/// both have merged into one numbered circle. A pilot asking "where do I land"
-/// got a number.
+/// They were briefly pulled out into their own layer so a launch's landing was
+/// always visible. On a real map that was worse than the problem it solved: a
+/// third of the catalogue is landings, so an Alpine viewport drew 78 of them and
+/// the launches the map exists to show could not be read through them - first
+/// with their labels colliding, then, labels suppressed, as 78 flags competing
+/// with 148 launches.
 ///
-/// `flutter_map_marker_cluster` has no per-marker opt-out, so the only way to
-/// keep a marker out of a cluster is to keep it out of the list handed to the
-/// cluster layer. That partition is what this pins - and nothing in `test/`
-/// covered this map in either direction before.
+/// So this pins the decision rather than the mechanism: whatever the marker code
+/// does, a landing beside a launch must not add a pin at overview zoom. Above
+/// `disableClusteringAtZoom` they draw individually anyway, which is the zoom
+/// where "where do I land" is a question you are actually asking.
+///
+/// Nothing else in `test/` covers this map at all.
 void main() {
   // Two sites 100m apart, well inside the 50px cluster radius, at a zoom below
   // `disableClusteringAtZoom: 14`. Clustered, they collapse into one circle
@@ -61,42 +64,25 @@ void main() {
     }
   }
 
-  testWidgets('a landing beside its launch is still its own marker',
+  testWidgets('a landing beside a launch adds no pin at overview zoom',
       (tester) async {
     await pumpMap(tester, [launch, landing]);
 
-    // The pin, not the name: below the detail zoom a landing draws its flag
-    // and nothing else, because 78 of them in one Alpine viewport buried the
-    // launches behind their labels. Found by its tooltip rather than its icon,
-    // because the legend carries a flag of its own.
-    expect(find.byTooltip('Landing site'), findsOneWidget,
-        reason: 'the landing is drawn individually, not folded into a cluster');
-    expect(find.text('Hang gliders'), findsNothing,
-        reason: 'its name would collide with every other landing at this zoom');
+    // One cluster of two, not a cluster and a flag beside it. Found by tooltip
+    // rather than by icon because the legend carries a flag of its own.
+    expect(find.text('2'), findsOneWidget);
+    expect(find.byTooltip('Landing site'), findsNothing,
+        reason: 'a landing must not draw its own pin over the launches');
+    expect(find.text('Hang gliders'), findsNothing);
   });
 
-  testWidgets('and takes its name back once the map shows detail',
+  testWidgets('and draws individually once the map shows detail',
       (tester) async {
+    // Past disableClusteringAtZoom nothing clusters, so the landing is there
+    // with its name - the zoom at which you are looking at one hill.
     await pumpMap(tester, [launch, landing], zoom: 15);
 
     expect(find.text('Hang gliders'), findsOneWidget);
-  });
-
-  testWidgets('the launch beside it still clusters', (tester) async {
-    // The other half, so this cannot pass by clustering having been turned off
-    // altogether. Two launches this close collapse to one marker labelled "2".
-    await pumpMap(tester, [
-      launch,
-      ParaglidingSite(
-        name: 'Mt Broughton - South launch',
-        latitude: -37.12359,
-        longitude: 145.41304,
-        siteType: 'launch',
-        windDirections: const ['S'],
-      ),
-    ]);
-
-    expect(find.text('2'), findsOneWidget);
-    expect(find.text('Mt Broughton (Thistle Hill)'), findsNothing);
+    expect(find.byTooltip('Landing site'), findsOneWidget);
   });
 }

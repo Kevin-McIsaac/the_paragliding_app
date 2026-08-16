@@ -9,6 +9,16 @@ class SiteMarkerUtils {
   static const double siteMarkerSize = 42.0;
   static const double siteMarkerIconSize = 36.0;
   static const double launchMarkerSize = 25.0;
+
+  // A catalogue landing, drawn deliberately smaller than a launch.
+  //
+  // It used to be drawn at siteMarkerSize, the same weight as a launch, which
+  // made the eye rank the two equally. They are not equal on this map: you
+  // choose a launch, and its landing follows from that choice. Two thirds the
+  // size, and the muted slate below, is enough to say "supporting information"
+  // without making it hard to find when you are looking for one.
+  static const double landingMarkerSize = 28.0;
+  static const double landingMarkerIconSize = 22.0;
   
   // Site status colors (for other screens)
   static const Color flownSiteColor = Color(0xFF0047AB);     // Sites with logged flights (cobalt blue)
@@ -26,7 +36,10 @@ class SiteMarkerUtils {
   // orange, red and blue all mean "can I fly here today", and a landing has no
   // wind directions to answer that with. It is told apart by *shape* - a flag
   // rather than a pin - so its colour is free to say nothing at all.
-  static const Color landingSiteColor = Color(0xFF455A64);
+  //
+  // Blue-grey 400 rather than 700: a landing recedes behind the launches the
+  // map is for. See landingMarkerSize.
+  static const Color landingSiteColor = Color(0xFF78909C);
 
   // Launch/landing colors (flight track endpoints, not catalogue rows)
   static const Color launchColor = Colors.green;
@@ -167,8 +180,11 @@ class SiteMarkerUtils {
     return Stack(
       alignment: Alignment.center,
       children: [
-        const Icon(Icons.flag, color: Colors.white, size: siteMarkerSize),
-        Icon(Icons.flag, color: color, size: siteMarkerIconSize - 6),
+        // The white flag under the coloured one is what keeps a landing
+        // legible against terrain, so it scales with the marker rather than
+        // being dropped.
+        const Icon(Icons.flag, color: Colors.white, size: landingMarkerSize),
+        Icon(Icons.flag, color: color, size: landingMarkerIconSize),
       ],
     );
   }
