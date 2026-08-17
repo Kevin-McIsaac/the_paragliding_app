@@ -537,9 +537,15 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         ),
         const SizedBox(height: 4),
       ],
-      SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Flown Sites'),
+      SiteMarkerUtils.buildLegendItem(context, null, SiteMarkerUtils.flownSiteColor, 'Flown Sites',
+          swatch: SiteMarkerUtils.siteSymbol('launch',
+              color: SiteMarkerUtils.flownSiteColor,
+              size: SiteMarkerUtils.legendSymbolSize)),
       const SizedBox(height: 4),
-      SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.newSiteColor, 'New Sites'),
+      SiteMarkerUtils.buildLegendItem(context, null, SiteMarkerUtils.newSiteColor, 'New Sites',
+          swatch: SiteMarkerUtils.siteSymbol('launch',
+              color: SiteMarkerUtils.newSiteColor,
+              size: SiteMarkerUtils.legendSymbolSize)),
     ];
     
     return Positioned(
