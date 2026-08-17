@@ -467,42 +467,57 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       const SizedBox(height: 4),
       SiteMarkerUtils.buildLegendItem(
         context,
-        Icons.location_on,
+        null,
         SiteMarkerUtils.flyableSiteColor,
         'Flyable',
+        swatch: SiteMarkerUtils.siteSymbol('launch',
+            color: SiteMarkerUtils.flyableSiteColor,
+            size: SiteMarkerUtils.legendSymbolSize),
       ),
       const SizedBox(height: 4),
       SiteMarkerUtils.buildLegendItem(
         context,
-        Icons.location_on,
+        null,
         SiteMarkerUtils.strongWindSiteColor,
         'Strong',
+        swatch: SiteMarkerUtils.siteSymbol('launch',
+            color: SiteMarkerUtils.strongWindSiteColor,
+            size: SiteMarkerUtils.legendSymbolSize),
       ),
       const SizedBox(height: 4),
       SiteMarkerUtils.buildLegendItem(
         context,
-        Icons.location_on,
+        null,
         SiteMarkerUtils.notFlyableSiteColor,
         'Not Flyable',
+        swatch: SiteMarkerUtils.siteSymbol('launch',
+            color: SiteMarkerUtils.notFlyableSiteColor,
+            size: SiteMarkerUtils.legendSymbolSize),
       ),
       const SizedBox(height: 4),
       SiteMarkerUtils.buildLegendItem(
         context,
-        Icons.location_on,
+        null,
         SiteMarkerUtils.unknownFlyabilitySiteColor,
         'Unknown',
+        swatch: SiteMarkerUtils.siteSymbol('launch',
+            color: SiteMarkerUtils.unknownFlyabilitySiteColor,
+            size: SiteMarkerUtils.legendSymbolSize),
       ),
       const SizedBox(height: 4),
-      // Last, and with a different icon: the four above are one scale - can I
-      // fly here now - and a landing is not a point on it.
+      // Last, and with a different symbol: the four above are one scale - can
+      // I fly here now - and a landing is not a point on it.
       //
-      // Glyph taken from markerShapeFor rather than named here, so the legend
-      // cannot end up describing a marker the map no longer draws.
+      // Symbol from siteSymbol rather than named here, so the legend cannot
+      // end up describing a marker the map no longer draws.
       SiteMarkerUtils.buildLegendItem(
         context,
-        SiteMarkerUtils.markerShapeFor('landing').glyph,
+        null,
         SiteMarkerUtils.landingSiteColor,
         'Landing',
+        swatch: SiteMarkerUtils.siteSymbol('landing',
+            color: SiteMarkerUtils.landingSiteColor,
+            size: SiteMarkerUtils.legendSymbolSize),
       ),
     ];
   }
