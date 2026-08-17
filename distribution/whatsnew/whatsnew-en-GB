@@ -1,7 +1,8 @@
-• Flights now match the nearest launch rather than the first one found, and
-  Data Management can re-run that match across your whole log
-• Site altitudes say they are above sea level, the landing comes from the
-  site you opened, and duplicate markers on the map are gone
-• The site guide updates without an app update, and credits ParaglidingEarth's
-  licence and the Australian National Site Guide
-• Search fields in the top bar are readable again in the light theme
+• Landing areas are proper sites now: see where you are expected to land, how
+  far it is, and the rules that come with it. They are marked with a windsock
+  on the map
+• Site pages open straight away instead of waiting on the network, and links
+  to ParaglidingEarth, DHV and the Australian guide reach the right page
+• Launch altitudes come from one source, so they no longer disagree
+• Removing an airspace country really removes it, and maps start faster
+• Data Management dialogs scroll again
