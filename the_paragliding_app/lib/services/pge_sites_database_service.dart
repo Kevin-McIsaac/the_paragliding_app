@@ -121,13 +121,20 @@ class PgeSitesDatabaseService {
   ///
   /// The catalogue holds landings as well as launches, and almost nothing that
   /// asks it a question wants a landing: matching a logged flight to a hill,
-  /// ranking where to fly today, searching by name, listing favourites. So the
-  /// default is launches, everywhere, and a caller that wants landings says so.
+  /// ranking where to fly today, listing favourites. So the default is
+  /// launches, everywhere, and a caller that wants landings says so.
   ///
   /// The direction matters. Defaulting the other way would mean every one of
   /// those callers had to remember to exclude landings, and the cost of
   /// forgetting is a flight permanently attached to the wrong site. This way
   /// the cost of forgetting is a landing missing from a screen.
+  ///
+  /// Name search used to be on that list and no longer is - see
+  /// `SiteBoundsLoaderV2.searchSitesByName`. What the queries above have in
+  /// common is that they pick a site *for* the pilot, so a landing among the
+  /// candidates is a wrong answer. A search hands the pilot the list and lets
+  /// them tap the one they meant, and since #362 a landing has a page to open
+  /// when they do.
   static const List<String> launchesOnly = ['launch'];
   static const List<String> launchesAndLandings = ['launch', 'landing'];
 
@@ -1005,6 +1012,30 @@ class PgeSitesDatabaseService {
     }
   }
 
+  /// Which importer built the rows now in the database.
+  ///
+  /// 0 for a database imported before the stamp existed, and for one whose stamp
+  /// cannot be read - both mean "older than anything", which is the answer that
+  /// makes the caller re-import rather than trust rows it cannot vouch for.
+  Future<int> importedByVersion() async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final rows = await db.query(
+        _pgeSitesMetadataTable,
+        columns: ['version'],
+        orderBy: 'downloaded_at DESC',
+        limit: 1,
+      );
+      if (rows.isEmpty) return 0;
+
+      return PgeSitesConfig.importerVersionFrom(rows.first['version'] as String?);
+    } catch (error, stackTrace) {
+      LoggingService.error(
+          '[PGE_SITES_DB] Failed to read importer version', error, stackTrace);
+      return 0;
+    }
+  }
+
   /// Update import metadata
   Future<void> _updateImportMetadata(int sitesCount) async {
     try {
@@ -1017,7 +1048,10 @@ class PgeSitesDatabaseService {
         'sites_count': sitesCount,
         'file_size_bytes': downloadStatus['file_size_bytes'] ?? 0,
         'status': 'completed',
-        'version': DateTime.now().millisecondsSinceEpoch.toString(),
+        // Which importer built these rows - see PgeSitesConfig.importerVersion.
+        // It used to be the import's own timestamp, which nothing read and which
+        // said nothing `downloaded_at` above does not already say.
+        'version': PgeSitesConfig.importerStamp(PgeSitesConfig.importerVersion),
       };
 
       // Clear existing metadata and insert new
@@ -1166,14 +1200,22 @@ class PgeSitesDatabaseService {
     return null;
   }
 
+  /// The pilot's favourites, launches only unless a caller asks otherwise.
+  ///
+  /// The default is for the Forecast screen, which ranks where to fly: a landing
+  /// has no wind directions, so it would either sit there as "unknown" or, worse,
+  /// inherit its launch's and read as flyable.
+  ///
+  /// The Sites screen's favourites menu passes [launchesAndLandings], because a
+  /// landing can be favourited from its own page and a list that dropped it was
+  /// lying about what the pilot had marked. Two screens, two questions, one
+  /// query - so the difference is stated at the call site rather than being a
+  /// second method that could drift from this one.
   Future<List<ParaglidingSite>> getFavoriteSites({
     List<String> siteTypes = launchesOnly,
   }) async {
     try {
       final db = await DatabaseHelper.instance.database;
-      // Favourites feed the multi-site flyability screen, which ranks where to
-      // fly - a landing has no wind directions, so it would either sit there as
-      // "unknown" or, worse, inherit its launch's and read as flyable.
       final results = await db.rawQuery('''
         SELECT s.*, COALESCE(cc.name, s.country) as country_name
         FROM $_pgeSitesTable s

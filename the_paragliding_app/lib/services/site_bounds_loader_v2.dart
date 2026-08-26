@@ -47,9 +47,11 @@ class SiteBoundsLoaderV2 {
       // 2. Always load PGE sites from local database
       // The database will return empty list if no sites exist
       //
-      // The one place that asks for landings. Everything else - matching,
-      // flyability ranking, search, favourites - takes the launches-only
-      // default, so a landing can be drawn without being mistaken for a hill.
+      // This file is where landings are asked for, and both its queries ask -
+      // what the map draws and what a search over that map finds are the same
+      // set of sites. Everything else - matching, flyability ranking,
+      // favourites - takes the launches-only default, so a landing can be drawn
+      // without being mistaken for a hill.
       futures.add(PgeSitesDatabaseService.instance.getSitesInBounds(
         north: bounds.north,
         south: bounds.south,
@@ -124,7 +126,14 @@ class SiteBoundsLoaderV2 {
     }
   }
 
-  /// Search sites by name using local database only
+  /// Search sites by name using local database only.
+  ///
+  /// Landings included, for the same reason [loadSitesForBounds] draws them:
+  /// this searches the map, and a landing is one of the things on it. The
+  /// launches-only default belongs to the queries that pick a site *for* the
+  /// pilot - matching a flight to a hill, ranking where to fly - where a
+  /// landing returned by mistake is a wrong answer rather than an extra one.
+  /// Here the pilot reads the result and taps the one they meant.
   Future<List<ParaglidingSite>> searchSitesByName(
     String query, {
     double? centerLatitude,
@@ -136,6 +145,7 @@ class SiteBoundsLoaderV2 {
         query: query,
         centerLatitude: centerLatitude,
         centerLongitude: centerLongitude,
+        siteTypes: PgeSitesDatabaseService.launchesAndLandings,
       );
     } catch (error, stackTrace) {
       LoggingService.error('SiteBoundsLoaderV2: Search failed', error, stackTrace);

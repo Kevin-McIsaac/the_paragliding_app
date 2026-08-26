@@ -18,6 +18,8 @@ import '../../services/weather_station_service.dart';
 import '../../services/weather_providers/weather_station_provider_registry.dart';
 import '../../utils/map_constants.dart';
 import '../../utils/site_utils.dart';
+import '../../utils/site_marker_utils.dart';
+import '../../utils/catalog_ref.dart';
 import '../../utils/preferences_helper.dart';
 import '../../utils/flyability_helper.dart';
 import '../../utils/ui_utils.dart';
@@ -35,6 +37,8 @@ import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
 import '../../services/app_initialization_service.dart';
 import '../widgets/common/app_search_field.dart';
+import '../widgets/common/site_search_result_tile.dart';
+import '../../services/site_bounds_loader_v2.dart';
 
 /// Loading states for different operations
 enum LoadingOperation {
@@ -44,6 +48,19 @@ enum LoadingOperation {
   wind,
   weatherStations,
   favorites,
+}
+
+/// One line of the favourites menu: a site, and whether it is shown as a
+/// landing belonging to the launch above it.
+///
+/// The nesting is presentation only. Both kinds of row are equally a favourite
+/// and behave identically when tapped - indenting one says which launch it
+/// serves, not that it is worth less.
+class FavoriteRow {
+  final ParaglidingSite site;
+  final bool isNested;
+
+  const FavoriteRow(this.site, {this.isNested = false});
 }
 
 class NearbySitesScreen extends StatefulWidget {
@@ -163,8 +180,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   bool _forecastActuallyCallingApi = false; // Track if forecast API is being called
   bool _forecastHasError = false; // Track if forecast API call failed
 
-  // Favorites state
-  List<ParaglidingSite> _favoriteSites = [];
+  // Favorites state, in menu order - see groupFavorites.
+  List<FavoriteRow> _favoriteRows = [];
 
   @override
   void initState() {
@@ -332,8 +349,11 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       setState(() => _isSearching = true);
 
       try {
-        final results = await PgeSitesDatabaseService.instance.searchSitesByName(
-          query: _searchQuery,
+        // Through the bounds loader, not the database service: this searches
+        // the map, so it has to agree with the map about what is on it -
+        // landings included. See SiteBoundsLoaderV2.searchSitesByName.
+        final results = await SiteBoundsLoaderV2.instance.searchSitesByName(
+          _searchQuery,
         );
 
         if (mounted) {
@@ -747,6 +767,83 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   /// Load favorite sites from database tables
   /// Queries both local sites table and PGE sites table for favorites
   /// Deduplicates sites that exist in both databases (prefer PGE version)
+  /// Order the favourites so each landing follows the launch it serves.
+  ///
+  /// [favorites] arrives in the order the menu should show its top-level rows -
+  /// by distance from the pilot, or as loaded when there is no position fix.
+  /// That order is preserved: this only pulls landings out of it and puts them
+  /// back under their launch.
+  ///
+  /// **A landing nests under the nearest favourited launch it serves, and only
+  /// that one.** 28.5% of DHV landings serve several launches, so listing one
+  /// under each would show a pilot who favourited four launches on the same hill
+  /// their landing four times. One row per favourite is what a favourites list
+  /// is for.
+  ///
+  /// A landing whose launch is not favourited stays where it is, at top level.
+  /// It is the pilot's favourite; hiding it, or heading it with a launch they
+  /// did not choose, would both misrepresent the list.
+  ///
+  /// Matched on the `site_group` tokens the guides publish, never on distance -
+  /// the same rule as [PgeSitesDatabaseService.getLandingsForSite], restated
+  /// here because this is the one caller that cannot reuse the SQL. Distance is
+  /// used only to break a tie between launches that already share a token, so
+  /// no position fix is needed and the grouping works before one arrives.
+  ///
+  /// Sites are held by index rather than by value: [ParaglidingSite] compares on
+  /// `siteKey`, and two rows sharing one would otherwise collapse into a single
+  /// map entry and lose a favourite.
+  @visibleForTesting
+  static List<FavoriteRow> groupFavorites(List<ParaglidingSite> favorites) {
+    bool isLanding(ParaglidingSite site) => site.siteType == 'landing';
+
+    // Launch index -> the landings nesting under it, nearest first.
+    final nested = <int, List<ParaglidingSite>>{};
+    final nestedLandings = <int>{};
+
+    for (var i = 0; i < favorites.length; i++) {
+      final landing = favorites[i];
+      if (!isLanding(landing)) continue;
+
+      final tokens = CatalogRef.tokensOf(landing.siteGroup).toSet();
+      if (tokens.isEmpty) continue;
+
+      int? host;
+      double? nearest;
+      for (var j = 0; j < favorites.length; j++) {
+        final launch = favorites[j];
+        if (isLanding(launch)) continue;
+        if (!CatalogRef.tokensOf(launch.siteGroup).any(tokens.contains)) continue;
+
+        final distance = landing.distanceTo(launch.latitude, launch.longitude);
+        if (nearest == null || distance < nearest) {
+          nearest = distance;
+          host = j;
+        }
+      }
+
+      if (host != null) {
+        (nested[host] ??= []).add(landing);
+        nestedLandings.add(i);
+      }
+    }
+
+    final rows = <FavoriteRow>[];
+    for (var i = 0; i < favorites.length; i++) {
+      if (nestedLandings.contains(i)) continue; // emitted under its launch
+      rows.add(FavoriteRow(favorites[i]));
+
+      final children = nested[i];
+      if (children == null) continue;
+      children.sort((a, b) => a
+          .distanceTo(favorites[i].latitude, favorites[i].longitude)
+          .compareTo(b.distanceTo(favorites[i].latitude, favorites[i].longitude)));
+      rows.addAll(children.map((site) => FavoriteRow(site, isNested: true)));
+    }
+
+    return rows;
+  }
+
   Future<void> _loadFavorites() async {
     setState(() {
       _activeLoadingOperations.add(LoadingOperation.favorites);
@@ -755,7 +852,13 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     try {
       // Get favorites from both database tables
       final localFavorites = await DatabaseService.instance.getFavoriteSites();
-      final pgeFavorites = await PgeSitesDatabaseService.instance.getFavoriteSites();
+      // Landings included here and nowhere else. A pilot can favourite a landing
+      // from its site page, so a favourites list that silently dropped it was
+      // lying about what it holds. The Forecast screen's favourites keep the
+      // launches-only default - see getFavoriteSites.
+      final pgeFavorites = await PgeSitesDatabaseService.instance
+          .getFavoriteSites(
+              siteTypes: PgeSitesDatabaseService.launchesAndLandings);
 
       // Deduplicate: Remove local favorites that have catalog_ref matching a PGE favorite
       // This ensures we don't show duplicate sites when one exists in both databases
@@ -800,7 +903,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
 
       if (mounted) {
         setState(() {
-          _favoriteSites = sites;
+          _favoriteRows = groupFavorites(sites);
           _activeLoadingOperations.remove(LoadingOperation.favorites);
         });
 
@@ -815,7 +918,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       LoggingService.error('Failed to load favorites', e, stackTrace);
       if (mounted) {
         setState(() {
-          _favoriteSites = [];
+          _favoriteRows = [];
           _activeLoadingOperations.remove(LoadingOperation.favorites);
         });
       }
@@ -1720,7 +1823,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                 ];
               }
 
-              if (_favoriteSites.isEmpty) {
+              if (_favoriteRows.isEmpty) {
                 return [
                   const PopupMenuItem(
                     enabled: false,
@@ -1729,7 +1832,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                 ];
               }
 
-              return _favoriteSites.map((site) {
+              return _favoriteRows.map((row) {
+                final site = row.site;
                 String distanceText = '';
                 if (_userPosition != null) {
                   final distance = Geolocator.distanceBetween(
@@ -1743,17 +1847,28 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
 
                 return PopupMenuItem<ParaglidingSite>(
                   value: site,
-                  child: Row(
-                    children: [
-                      const Icon(Icons.place, size: 18, color: Colors.blue),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${site.name}$distanceText',
-                          overflow: TextOverflow.ellipsis,
+                  child: Padding(
+                    // Indent says which launch the landing above it serves.
+                    padding: EdgeInsets.only(left: row.isNested ? 20 : 0),
+                    child: Row(
+                      children: [
+                        // Asked of the same helper the map and the legend use,
+                        // rather than naming a glyph here - a landing is a
+                        // windsock in one place or it drifts.
+                        SiteMarkerUtils.siteSymbol(
+                          site.siteType,
+                          color: Colors.blue,
+                          size: 18,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${site.name}$distanceText',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               }).toList();
@@ -1988,39 +2103,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                         itemCount: _searchResults.length,
                         itemBuilder: (context, index) {
                           final site = _searchResults[index];
-                          return ListTile(
-                            leading: CircleAvatar(
-                              radius: 16,
-                              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                              child: Text(
-                                (site.country != null && site.country!.length >= 2)
-                                    ? site.country!.toUpperCase().substring(0, 2)
-                                    : '??',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                                ),
-                              ),
-                            ),
-                            title: Text(
-                              site.name,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w500,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                            ),
-                            subtitle: Text(
-                              site.country ?? 'Unknown',
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            trailing: Icon(
-                              Icons.arrow_forward_ios,
-                              size: 16,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+                          return SiteSearchResultTile(
+                            site: site,
                             onTap: () {
                               _jumpToLocation(site, keepSearchActive: false);
                               setState(() {

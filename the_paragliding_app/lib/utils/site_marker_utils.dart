@@ -23,6 +23,13 @@ class SiteMarkerUtils {
   // A legend row's symbol, small enough to sit on a text line. The same
   // symbols the map draws, only smaller - see siteSymbol.
   static const double legendSymbolSize = 18.0;
+
+  // A search result's symbol, sized for a ListTile's leading slot.
+  //
+  // One size for both types, unlike the map: there a landing is drawn smaller
+  // because you choose a launch and its landing follows, but in a list of
+  // things you typed a name to find, the two are equal candidates.
+  static const double resultSymbolSize = 28.0;
   
   // Site status colors (for other screens)
   static const Color flownSiteColor = Color(0xFF0047AB);     // Sites with logged flights (cobalt blue)
