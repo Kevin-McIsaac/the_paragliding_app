@@ -17,6 +17,7 @@ import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
 import '../../utils/flyability_helper.dart';
 import '../widgets/wind_rose_widget.dart';
+import '../widgets/windsock_marker.dart';
 import '../widgets/site_forecast_table.dart';
 import '../widgets/forecast_attribution_bar.dart';
 
@@ -204,6 +205,11 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
       _tabController = TabController(length: (_isLanding ? 0 : 1) + _sourceTabs.length, vsync: this);
     });
   }
+
+  /// The box the header's symbol is drawn in - the wind rose on a launch, the
+  /// windsock on a landing. One size for both, so the facts beside it start at
+  /// the same place and the header is the same height whichever site is open.
+  static const double _headerSymbolSize = 72.0;
 
   // Forecast table constants
   static const double _dayColumnWidth = 80.0;
@@ -919,26 +925,41 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     return tooltip == null ? fact : Tooltip(message: tooltip, child: fact);
   }
 
-  /// Wind rose on the left, whatever facts belong beside it on the right.
+  /// The site's symbol on the left, whatever facts belong beside it on the
+  /// right.
   ///
   /// Shared so the no-guides layout keeps the rose too - it is the one thing
   /// on this page that answers "is it on right now", and it should not
   /// disappear just because no guide has written the site up.
+  ///
+  /// A landing gets the windsock the map drew it with instead. It has no wind
+  /// directions to be graded against, so there is no rose to draw and the slot
+  /// used to be empty - the facts slid left and the header lost the anchor a
+  /// launch's page has. The sock is not answering the rose's question; it is
+  /// saying what the place is, with the same symbol the pilot just tapped.
   Widget _buildRoseHeader(List<String> windDirections, List<Widget> facts) {
+    // No tooltip on the sock: the facts beside it already write "Landing:" in
+    // words, so nothing here depends on a hover a phone does not have.
+    final Widget? symbol = _isLanding
+        ? const WindsockMarker(size: _headerSymbolSize)
+        : windDirections.isNotEmpty
+            ? WindRoseWidget(
+                launchableDirections: windDirections,
+                size: _headerSymbolSize,
+                windSpeed: _windData?.speedKmh,
+                windDirection: _windData?.directionDegrees,
+                centerDotColor: _getCenterDotColor(windDirections),
+                centerDotTooltip: _getCenterDotTooltip(windDirections),
+              )
+            : null;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (windDirections.isNotEmpty)
+        if (symbol != null)
           Padding(
             padding: const EdgeInsets.only(right: 12.0),
-            child: WindRoseWidget(
-              launchableDirections: windDirections,
-              size: 72.0,
-              windSpeed: _windData?.speedKmh,
-              windDirection: _windData?.directionDegrees,
-              centerDotColor: _getCenterDotColor(windDirections),
-              centerDotTooltip: _getCenterDotTooltip(windDirections),
-            ),
+            child: symbol,
           ),
         Expanded(
           child: Column(
