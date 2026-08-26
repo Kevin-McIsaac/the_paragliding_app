@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:the_paragliding_app/data/models/guide.dart';
 import 'package:the_paragliding_app/data/models/paragliding_site.dart';
 import 'package:the_paragliding_app/presentation/screens/site_details_screen.dart';
+import 'package:the_paragliding_app/presentation/widgets/wind_rose_widget.dart';
+import 'package:the_paragliding_app/presentation/widgets/windsock_marker.dart';
 import 'package:the_paragliding_app/services/pge_sites_database_service.dart';
 
 /// Site details was a modal bottom sheet whose tabs lived in a fixed 450px
@@ -163,6 +165,15 @@ void main() {
     expect(find.byTooltip('Altitude above mean sea level'), findsOneWidget);
   });
 
+  testWidgets('a launch is anchored by its wind rose', (tester) async {
+    // The pair with the landing case below. Without it the windsock could
+    // leak onto launches and every other assertion here would still pass.
+    await pumpPage(tester);
+
+    expect(find.byType(WindRoseWidget), findsOneWidget);
+    expect(find.byType(WindsockMarker), findsNothing);
+  });
+
   group('a landing', () {
     // A landing opens the same screen a launch does. The one thing it cannot
     // answer is whether you can fly today, and that is the only thing this
@@ -186,6 +197,19 @@ void main() {
       await pumpPage(tester, which: landing);
 
       expect(find.text('Forecast'), findsNothing);
+    });
+
+    testWidgets('is anchored by a windsock, where the rose would be',
+        (tester) async {
+      // A landing has no wind directions, so the rose's slot in the header was
+      // simply empty and the facts slid left. The windsock is the symbol the
+      // map drew this marker with, and it answers the question a landing can
+      // answer - what the place is - rather than the one it cannot.
+      await pumpPage(tester, which: landing);
+
+      expect(find.byType(WindsockMarker), findsOneWidget);
+      expect(find.byType(WindRoseWidget), findsNothing,
+          reason: 'a rose with no directions reads as "unflyable"');
     });
 
     testWidgets('keeps the guide tab it is described by', (tester) async {
