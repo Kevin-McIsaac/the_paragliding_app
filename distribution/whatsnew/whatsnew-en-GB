@@ -1,8 +1,8 @@
-• Landing areas are proper sites now: see where you are expected to land, how
-  far it is, and the rules that come with it. They are marked with a windsock
-  on the map
-• Site pages open straight away instead of waiting on the network, and links
-  to ParaglidingEarth, DHV and the Australian guide reach the right page
-• Launch altitudes come from one source, so they no longer disagree
-• Removing an airspace country really removes it, and maps start faster
-• Data Management dialogs scroll again
+• Landing areas now show as landings for everyone. If you upgraded and they
+  still looked like launches, this puts it right on its own - no need to
+  reset anything
+• Favourite a landing and it now appears in your favourites, tucked under
+  the launch it serves
+• Searching by name finds landing areas, not just launches
+• A landing's page is headed with a windsock, where a launch shows its wind
+  directions
