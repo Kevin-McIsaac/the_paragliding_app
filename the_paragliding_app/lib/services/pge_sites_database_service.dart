@@ -1005,6 +1005,30 @@ class PgeSitesDatabaseService {
     }
   }
 
+  /// Which importer built the rows now in the database.
+  ///
+  /// 0 for a database imported before the stamp existed, and for one whose stamp
+  /// cannot be read - both mean "older than anything", which is the answer that
+  /// makes the caller re-import rather than trust rows it cannot vouch for.
+  Future<int> importedByVersion() async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final rows = await db.query(
+        _pgeSitesMetadataTable,
+        columns: ['version'],
+        orderBy: 'downloaded_at DESC',
+        limit: 1,
+      );
+      if (rows.isEmpty) return 0;
+
+      return PgeSitesConfig.importerVersionFrom(rows.first['version'] as String?);
+    } catch (error, stackTrace) {
+      LoggingService.error(
+          '[PGE_SITES_DB] Failed to read importer version', error, stackTrace);
+      return 0;
+    }
+  }
+
   /// Update import metadata
   Future<void> _updateImportMetadata(int sitesCount) async {
     try {
@@ -1017,7 +1041,10 @@ class PgeSitesDatabaseService {
         'sites_count': sitesCount,
         'file_size_bytes': downloadStatus['file_size_bytes'] ?? 0,
         'status': 'completed',
-        'version': DateTime.now().millisecondsSinceEpoch.toString(),
+        // Which importer built these rows - see PgeSitesConfig.importerVersion.
+        // It used to be the import's own timestamp, which nothing read and which
+        // said nothing `downloaded_at` above does not already say.
+        'version': PgeSitesConfig.importerStamp(PgeSitesConfig.importerVersion),
       };
 
       // Clear existing metadata and insert new

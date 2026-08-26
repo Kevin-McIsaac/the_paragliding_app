@@ -294,6 +294,52 @@ void main() {
     });
   });
 
+  group('deciding whether to parse the local copy again', () {
+    test('a database built by an older importer is re-imported', () {
+      // The 1.0.9 upgrade, exactly: the pilot had already downloaded the
+      // published catalogue carrying site_type, so the file was current and
+      // every freshness check honestly answered "nothing to fetch" - while
+      // 1.0.8's importer had never read that column, leaving every landing in
+      // the database with a null type. Landings drew as launch pins in the
+      // release that added them.
+      expect(
+        AppInitializationService.shouldReimportLocalCopy(importedByVersion: 0),
+        isTrue,
+      );
+      expect(
+        AppInitializationService.shouldReimportLocalCopy(
+            importedByVersion: PgeSitesConfig.importerVersion - 1),
+        isTrue,
+      );
+    });
+
+    test('a database built by this importer is left alone', () {
+      // The other direction, and the common one: this runs on every cold start,
+      // so answering "yes" when the rows are already current would re-parse the
+      // whole catalogue each launch.
+      expect(
+        AppInitializationService.shouldReimportLocalCopy(
+            importedByVersion: PgeSitesConfig.importerVersion),
+        isFalse,
+      );
+    });
+
+    test('the stamps an older install left behind read as no importer at all', () {
+      // The column used to hold the import's own epoch timestamp. Read as a
+      // number it is larger than any importer version will ever be, so a
+      // database that predates the stamp would have looked newer than the code
+      // reading it and never been re-imported - the precise failure this exists
+      // to fix.
+      expect(PgeSitesConfig.importerVersionFrom('1787705237563'), 0);
+      expect(PgeSitesConfig.importerVersionFrom(null), 0);
+      expect(
+        PgeSitesConfig.importerVersionFrom(
+            PgeSitesConfig.importerStamp(PgeSitesConfig.importerVersion)),
+        PgeSitesConfig.importerVersion,
+      );
+    });
+  });
+
   group('which catalogue the pilot is running', () {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 

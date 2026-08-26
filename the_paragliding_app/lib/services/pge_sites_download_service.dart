@@ -48,6 +48,46 @@ class PgeSitesConfig {
   /// failure, so asking four times as often costs the pilot nothing.
   static const Duration checkInterval = Duration(days: 7);
 
+  /// What the importer understands, bumped whenever it starts reading a column
+  /// the previous one ignored.
+  ///
+  /// The freshness checks all ask whether the *file* on disk is current. This
+  /// asks the other question: whether the *rows* were built by the importer now
+  /// running. The two came apart on the 1.0.9 upgrade. A pilot on 1.0.8 had
+  /// already downloaded the published catalogue carrying `site_type`, so the
+  /// file was current and "Check for update" correctly said there was nothing to
+  /// fetch - but 1.0.8's importer had never read that column, so every landing
+  /// sat in the database as a null type, which reads as a launch and draws as a
+  /// launch pin. The release whose whole point was landings showed none of them,
+  /// and the only escape was Reset to Bundled, which throws the published
+  /// catalogue away to do it.
+  ///
+  /// Same role as `databaseVersion` in `database_helper.dart`, and the same
+  /// obligation: bump it in the change that teaches the importer a new column.
+  ///
+  /// 1 is implicit - every stamp written before this existed was a timestamp,
+  /// which [PgeSitesDatabaseService.importedByVersion] reads as 0.
+  static const int importerVersion = 2;
+
+  /// How [importerVersion] is written into `pge_sites_metadata.version`.
+  ///
+  /// Prefixed rather than stored bare so the epoch timestamps that column used
+  /// to hold cannot be mistaken for an enormous importer version - they have to
+  /// read as "older than anything", not "newer than everything".
+  static String importerStamp(int version) => '$_importerPrefix$version';
+
+  /// The importer behind a stamp, written or inherited.
+  ///
+  /// 0 for anything this does not recognise: an absent stamp, and the epoch
+  /// timestamps written before the column meant this. Both are databases whose
+  /// rows no importer vouches for, which is the case that has to re-import.
+  static int importerVersionFrom(String? stamp) {
+    if (stamp == null || !stamp.startsWith(_importerPrefix)) return 0;
+    return int.tryParse(stamp.substring(_importerPrefix.length)) ?? 0;
+  }
+
+  static const String _importerPrefix = 'importer:';
+
   /// Maximum sites per query
   static const int maxSitesPerQuery = 100;
 

@@ -160,6 +160,18 @@ class AppInitializationService {
           // is what the validators are read as meaning.
           await PgeSitesDownloadService.instance.commitDownloadValidators();
         }
+      } else if (shouldReimportLocalCopy(
+        importedByVersion:
+            await PgeSitesDatabaseService.instance.importedByVersion(),
+      )) {
+        // The file on disk is current and the rows are not. Re-parsing what is
+        // already there costs no network and keeps the published copy, which is
+        // what separates this from the Reset to Bundled a pilot would otherwise
+        // have to reach for.
+        LoggingService.info(
+            'AppInitializationService: Catalogue was imported by an older '
+            'importer, re-importing the local copy');
+        await PgeSitesDatabaseService.instance.importSitesData();
       } else {
         LoggingService.info('AppInitializationService: PGE sites already available');
       }
@@ -200,6 +212,21 @@ class AppInitializationService {
     if (localCopyIsPublished) return false;
     return bundledDiffersFromLocal;
   }
+
+  /// Whether the catalogue on disk should be parsed again into the database.
+  ///
+  /// Only reached once the file itself is settled - nothing newer is bundled,
+  /// nothing newer is published - so the sole remaining question is whether the
+  /// rows were built by an importer that read every column this one does. See
+  /// [PgeSitesConfig.importerVersion] for how the two came apart.
+  ///
+  /// Deliberately independent of [checkIsDue]. That throttle exists to spare the
+  /// pilot a HEAD request whose answer is almost always "no"; this needs no
+  /// network at all, and answers "no" from a single metadata row on every start
+  /// but the first after an upgrade.
+  @visibleForTesting
+  static bool shouldReimportLocalCopy({required int importedByVersion}) =>
+      importedByVersion < PgeSitesConfig.importerVersion;
 
   /// Whether enough time has passed to ask the server again.
   ///
