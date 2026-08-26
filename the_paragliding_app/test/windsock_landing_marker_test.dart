@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:the_paragliding_app/data/models/paragliding_site.dart';
+import 'package:the_paragliding_app/presentation/widgets/common/site_search_result_tile.dart';
 import 'package:the_paragliding_app/presentation/widgets/windsock_marker.dart';
 import 'package:the_paragliding_app/utils/site_marker_utils.dart';
 
@@ -78,5 +80,40 @@ void main() {
     expect(find.text('Landings'), findsOneWidget);
     expect(find.byType(WindsockMarker), findsOneWidget,
         reason: 'the legend must not go on advertising a flag');
+  });
+
+  group('a search result carries the same symbol', () {
+    // Now that the Sites search returns landings, the list has to say which is
+    // which before the tap: a landing usually carries its launch's name, and
+    // 423 of the catalogue's 5,882 landings say nothing about landing at all.
+    ParaglidingSite site(String type) => ParaglidingSite(
+          name: 'Manilla, Mt Borah (NSW)',
+          latitude: -30.6788,
+          longitude: 150.6123,
+          siteType: type,
+          country: 'Australia',
+        );
+
+    Future<void> pumpTile(WidgetTester tester, String type) => pump(
+          tester,
+          SiteSearchResultTile(site: site(type), onTap: () {}),
+        );
+
+    testWidgets('a landing result is a windsock', (tester) async {
+      await pumpTile(tester, 'landing');
+
+      expect(find.byType(WindsockMarker), findsOneWidget);
+      // The row it replaced showed the first two letters of the country *name*
+      // - "AU" only by luck, "GE" for Germany - above a subtitle spelling the
+      // country out in full.
+      expect(find.byType(CircleAvatar), findsNothing);
+    });
+
+    testWidgets('a launch result keeps the pin', (tester) async {
+      await pumpTile(tester, 'launch');
+
+      expect(find.byType(WindsockMarker), findsNothing);
+      expect(find.byIcon(Icons.location_on), findsNWidgets(2));
+    });
   });
 }
