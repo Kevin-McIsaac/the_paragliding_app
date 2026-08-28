@@ -27,9 +27,12 @@ void main() {
     test('degrades to the bare key for a guide it has never heard of', () {
       // The behaviour the old `_ => provider` switch arm had, and the reason a
       // guide added upstream is a plain-looking tab rather than a crash.
-      expect(Guides.of('ffvl'), isNull);
-      expect(Guides.labelOf('ffvl'), 'ffvl');
-      expect(Guides.fullNameOf('ffvl'), 'ffvl');
+      // `ffvl` was the fixture here until it became a real guide on the
+      // producer side - which is exactly the case this test exists for, so it
+      // now uses a key no guide will ever take.
+      expect(Guides.of('unheard_of'), isNull);
+      expect(Guides.labelOf('unheard_of'), 'unheard_of');
+      expect(Guides.fullNameOf('unheard_of'), 'unheard_of');
     });
 
     test('states a licence or states none, never half of one', () {
