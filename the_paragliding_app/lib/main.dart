@@ -269,7 +269,11 @@ class _AppInitializerState extends State<AppInitializer> {
       ),
       home: Scaffold(
         body: Center(
-          child: _error != null
+          // scaleDown: the desktop window's first frame lays out at 1x1 and
+          // anything unsized overflows - shrink to fit instead of throwing.
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: _error != null
               ? Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -307,6 +311,7 @@ class _AppInitializerState extends State<AppInitializer> {
                     ),
                   ],
                 ),
+          ),
         ),
       ),
     );
