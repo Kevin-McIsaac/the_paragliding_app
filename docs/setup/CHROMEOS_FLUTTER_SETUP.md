@@ -26,23 +26,30 @@ This guide documents the complete setup process for Flutter development on Chrom
 ## Flutter Installation
 
 ### 1. Download and Install Flutter
+
+**Install to `~/flutter`.** That exact path is what the Bash sandbox's
+`filesystem.allowWrite` list names (see the `sandbox-setup` skill); installing elsewhere
+gives you a Flutter that cannot write its own `bin/cache`, failing with
+`engine.stamp: Read-only file system`.
+
 ```bash
-# Create development directory
-mkdir -p ~/development
-cd ~/development
-
-# Download Flutter stable channel
-wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.32.8-stable.tar.xz
-
-# Extract Flutter
-tar xf flutter_linux_3.32.8-stable.tar.xz
+# Get the current stable tarball URL from
+# https://docs.flutter.dev/release/archive - do not copy a pinned version from
+# this document, it will always be behind
+cd ~
+wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_<VERSION>-stable.tar.xz
+tar xf flutter_linux_<VERSION>-stable.tar.xz     # extracts to ~/flutter
 
 # Add Flutter to PATH (add to ~/.bashrc for permanence)
-export PATH="$HOME/development/flutter/bin:$PATH"
+export PATH="$HOME/flutter/bin:$PATH"
 
 # Verify installation
 flutter --version
 ```
+
+This machine is on **Flutter 3.41.6 stable** as of 2026-08-29; the guide previously
+pinned 3.32.8 and told you to install to `~/development/flutter`, neither of which
+matches the real setup.
 
 ### 2. Run Flutter Doctor
 ```bash
@@ -69,8 +76,8 @@ ChromeOS Linux containers have specific challenges for Android development:
 #### 1. Create Complete Android SDK
 ```bash
 # Create SDK directory in user space
-mkdir -p ~/android-sdk-complete
-cd ~/android-sdk-complete
+mkdir -p ~/android-sdk
+cd ~/android-sdk
 
 # Download complete Android command-line tools
 wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
@@ -87,24 +94,24 @@ chmod +x cmdline-tools/latest/bin/*
 #### 2. Install Essential Components
 ```bash
 # Set environment for SDK operations
-export ANDROID_HOME=~/android-sdk-complete
-export ANDROID_SDK_ROOT=~/android-sdk-complete
+export ANDROID_HOME=~/android-sdk
+export ANDROID_SDK_ROOT=~/android-sdk
 export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
 # Install platform tools
-~/android-sdk-complete/cmdline-tools/latest/bin/sdkmanager "platform-tools"
+~/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools"
 
 # Install build tools and platforms
-~/android-sdk-complete/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0"
-~/android-sdk-complete/cmdline-tools/latest/bin/sdkmanager "platforms;android-34"
-~/android-sdk-complete/cmdline-tools/latest/bin/sdkmanager "platforms;android-35"
+~/android-sdk/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0"
+~/android-sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-34"
+~/android-sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-35"
 
 # Install NDK versions (both required for Flutter)
-~/android-sdk-complete/cmdline-tools/latest/bin/sdkmanager "ndk;27.0.12077973"  # Plugin requirement
-~/android-sdk-complete/cmdline-tools/latest/bin/sdkmanager "ndk;26.3.11579264"  # Build requirement
+~/android-sdk/cmdline-tools/latest/bin/sdkmanager "ndk;27.0.12077973"  # Plugin requirement
+~/android-sdk/cmdline-tools/latest/bin/sdkmanager "ndk;26.3.11579264"  # Build requirement
 
 # Accept all licenses
-yes | ~/android-sdk-complete/cmdline-tools/latest/bin/sdkmanager --licenses
+yes | ~/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
 ```
 
 #### 3. Configure Environment Permanently
@@ -113,8 +120,8 @@ yes | ~/android-sdk-complete/cmdline-tools/latest/bin/sdkmanager --licenses
 cat >> ~/.bashrc << 'EOF'
 
 # Android SDK Configuration - Complete SDK
-export ANDROID_HOME=/home/kmcisaac/android-sdk-complete
-export ANDROID_SDK_ROOT=/home/kmcisaac/android-sdk-complete
+export ANDROID_HOME=/home/kmcisaac/android-sdk
+export ANDROID_SDK_ROOT=/home/kmcisaac/android-sdk
 export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 EOF
 
@@ -133,7 +140,7 @@ flutter doctor
 
 Expected result after setup:
 ```
-[✓] Flutter (Channel stable, 3.32.8)
+[✓] Flutter (Channel stable, 3.41.6)
 [✓] Android toolchain - develop for Android devices (Android SDK version 34.0.0)
 [✓] Linux toolchain - develop for Linux desktop
 ```
@@ -204,7 +211,7 @@ chmod +x ~/.local/share/applications/android-studio.desktop
 
 ### 3. Configure Android Studio
 1. **Launch Android Studio** from app launcher
-2. **Configure SDK location**: File → Settings → Android SDK → SDK Location: `/home/kmcisaac/android-sdk-complete`
+2. **Configure SDK location**: File → Settings → Android SDK → SDK Location: `/home/kmcisaac/android-sdk`
 3. **Verify components**: Check that NDK and build tools are detected
 4. **Import Flutter project**: Open → Navigate to Flutter project directory
 
@@ -232,17 +239,17 @@ android.useAndroidX=true
 android.enableJetifier=true
 
 # Ensure correct SDK paths
-android.sdk.home=/home/kmcisaac/android-sdk-complete
-android.ndk.home=/home/kmcisaac/android-sdk-complete/ndk/27.0.12077973
+android.sdk.home=/home/kmcisaac/android-sdk
+android.ndk.home=/home/kmcisaac/android-sdk/ndk/27.0.12077973
 ```
 
 ### 3. Project SDK Configuration
 In `android/local.properties`:
 ```properties
 flutter.sdk=/path/to/flutter
-sdk.dir=/home/kmcisaac/android-sdk-complete
-android.sdk.home=/home/kmcisaac/android-sdk-complete
-android.ndk.home=/home/kmcisaac/android-sdk-complete/ndk/27.0.12077973
+sdk.dir=/home/kmcisaac/android-sdk
+android.sdk.home=/home/kmcisaac/android-sdk
+android.ndk.home=/home/kmcisaac/android-sdk/ndk/27.0.12077973
 ```
 
 ## Development Workflow Scripts
@@ -272,12 +279,12 @@ fi
 # Set up complete Flutter development environment
 
 # Android SDK
-export ANDROID_HOME=~/android-sdk-complete
-export ANDROID_SDK_ROOT=~/android-sdk-complete
+export ANDROID_HOME=~/android-sdk
+export ANDROID_SDK_ROOT=~/android-sdk
 export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
 # Flutter
-export PATH="$HOME/development/flutter/bin:$PATH"
+export PATH="$HOME/flutter/bin:$PATH"
 
 echo "Environment configured:"
 echo "Flutter: $(flutter --version | head -1)"
@@ -295,8 +302,8 @@ flutter devices
 set -e
 
 # Configure environment
-export ANDROID_HOME=~/android-sdk-complete
-export ANDROID_SDK_ROOT=~/android-sdk-complete
+export ANDROID_HOME=~/android-sdk
+export ANDROID_SDK_ROOT=~/android-sdk
 
 DEVICE_IP="192.168.86.250:35933"
 
@@ -353,7 +360,7 @@ org.gradle.daemon=true
 
 ### 2. "SDK directory not writable"
 **Problem**: Trying to use system SDK directories
-**Solution**: Use complete user-controlled SDK at `~/android-sdk-complete`
+**Solution**: Use complete user-controlled SDK at `~/android-sdk`
 
 ### 3. Gradle daemon crashes
 **Problem**: Memory constraints in ChromeOS container

@@ -2,6 +2,16 @@
 
 This document provides a comprehensive guide for setting up wireless ADB debugging on ChromeOS for Flutter Android development.
 
+> **This is the first-time setup guide.** For day-to-day use — the device id to pass to
+> `-d`, reconnecting, screenshots, driving the UI, reading logs — the `run-app` skill is
+> the operational source and is kept current. Come here when setting up a new machine or
+> phone, or when pairing has broken.
+>
+> **Everything here needs the Bash sandbox disabled.** A sandboxed shell has no network
+> interface at all, so any command reaching the phone fails with `Network is unreachable`
+> — which reads as the phone being absent and is not. `No route to host` is the real
+> network. See the `sandbox-setup` skill.
+
 ## Overview
 
 Wireless ADB allows you to debug and deploy Android apps over WiFi without USB cables. This is especially useful for ChromeOS development where USB passthrough can be limited.
@@ -31,29 +41,47 @@ Wireless ADB allows you to debug and deploy Android apps over WiFi without USB c
 
 ### 2. ChromeOS Platform Tools Setup
 
-#### Download Latest Platform Tools
+#### Platform tools
+
+On this machine adb is **already installed** at `~/android-sdk/platform-tools/adb` and is
+on `PATH` — check before installing anything:
+
 ```bash
-# Create directory for new platform tools
-mkdir -p ~/platform-tools-new
-cd ~/platform-tools-new
-
-# Download latest platform tools with wireless pairing support
-wget https://dl.google.com/android/repository/platform-tools-latest-linux.zip
-
-# Extract tools
-unzip platform-tools-latest-linux.zip
-
-# Verify installation
-~/platform-tools-new/platform-tools/adb --version
+which adb && adb --version
 ```
 
-Expected output: `Android Debug Bridge version 1.0.41` or later
+Expected output: `Android Debug Bridge version 1.0.41` or later. Only if that comes back
+empty, install it:
+
+```bash
+mkdir -p ~/android-sdk && cd ~/android-sdk
+wget https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+unzip platform-tools-latest-linux.zip
+# then add ~/android-sdk/platform-tools to PATH
+```
+
+> Earlier versions of this guide installed a second copy under `~/platform-tools-new/`
+> and prefixed every command with that path. Don't — a parallel adb means two servers
+> competing for port 5037 and a device that appears in one and not the other.
 
 ## Wireless Connection Process
 
 ### Method 1: Android 11+ Built-in Wireless Debugging
 
 #### Step 1: Get Device IP and Port
+
+**Do not reuse an IP recorded anywhere — DHCP moves the phone.** The addresses in this
+guide are examples from one past session, nothing more. Discover the live one instead:
+
+```bash
+adb mdns services | awk '/_adb-tls-connect/{print $NF}'   # connect port
+adb mdns services | awk '/_adb-tls-pairing/{print $NF}'   # pairing port, only while the dialog is open
+```
+
+`adb mdns services` **does** work from this Crostini container (verified 2026-08-11); an
+earlier claim that multicast cannot cross the NAT was wrong and cost real time. Falling
+back to the on-screen values also works:
+
 1. On Android device, go to **Developer options** → **Wireless debugging**
 2. Note the **IP address & Port** at the top (e.g., `192.168.86.250:35933`)
 
@@ -62,10 +90,10 @@ Expected output: `Android Debug Bridge version 1.0.41` or later
 2. Note the 6-digit pairing code and pairing IP:port
 3. On ChromeOS, run pairing command:
 ```bash
-~/platform-tools-new/platform-tools/adb pair PAIRING_IP:PAIRING_PORT PAIRING_CODE
+adb pair PAIRING_IP:PAIRING_PORT PAIRING_CODE
 
 # Example:
-~/platform-tools-new/platform-tools/adb pair 192.168.86.250:42889 593694
+adb pair 192.168.86.250:42889 593694
 ```
 
 Expected output: `Successfully paired to 192.168.86.250:42889`
@@ -73,17 +101,17 @@ Expected output: `Successfully paired to 192.168.86.250:42889`
 #### Step 3: Connect to Device
 ```bash
 # Connect using the main IP and port (not the pairing port)
-~/platform-tools-new/platform-tools/adb connect DEVICE_IP:DEVICE_PORT
+adb connect DEVICE_IP:DEVICE_PORT
 
 # Example:
-~/platform-tools-new/platform-tools/adb connect 192.168.86.250:35933
+adb connect 192.168.86.250:35933
 ```
 
 Expected output: `connected to 192.168.86.250:35933`
 
 #### Step 4: Verify Connection
 ```bash
-~/platform-tools-new/platform-tools/adb devices -l
+adb devices -l
 ```
 
 Expected output should show your device:
@@ -127,12 +155,24 @@ flutter devices
 
 Expected output should include your wireless device:
 ```
-Pixel 9 (mobile) • 192.168.86.250:35933 • android-arm64 • Android 16 (API 36)
+Pixel 9 (mobile) • adb-52110DLAQ001UT-hkZkFs._adb-tls-connect._tcp • android-arm64 • Android 17 (API 37)
 ```
 
+**Flutter wants its own device id, not the `IP:port` that `adb devices` prints**, and
+once the phone is paired that id is stable across DHCP changes — which is why it, rather
+than an address, is what you pass to `-d`. Always quote it.
+
+Two things that look like an absent phone and are not: `flutter devices` listing only
+Linux and Chrome (it can miss a transport `adb devices -l` sees — check both), and a
+failing `adb connect` while `adb devices -l` shows the phone online on the next line.
+
 ### Deploy Flutter App Wirelessly
+
+Use the project's runner rather than a bare `flutter run` — it handles the log file, the
+pid file and the API keys:
+
 ```bash
-flutter run -d 192.168.86.250:35933
+bin/dev_run.sh -d "adb-52110DLAQ001UT-hkZkFs._adb-tls-connect._tcp" --background
 ```
 
 ## Automated Connection Scripts
@@ -149,17 +189,17 @@ DEVICE_PORT="35933"  # Update this when device port changes
 echo "Connecting to Android device wirelessly..."
 
 # Kill any existing ADB server
-~/platform-tools-new/platform-tools/adb kill-server
+adb kill-server
 
 # Connect to device
-~/platform-tools-new/platform-tools/adb connect $DEVICE_IP:$DEVICE_PORT
+adb connect $DEVICE_IP:$DEVICE_PORT
 
 # Verify connection
-if ~/platform-tools-new/platform-tools/adb devices | grep -q "$DEVICE_IP:$DEVICE_PORT.*device"; then
+if adb devices | grep -q "$DEVICE_IP:$DEVICE_PORT.*device"; then
     echo "✅ Successfully connected to $DEVICE_IP:$DEVICE_PORT"
     
     # Test connection
-    DEVICE_MODEL=$(~/platform-tools-new/platform-tools/adb -s $DEVICE_IP:$DEVICE_PORT shell getprop ro.product.model)
+    DEVICE_MODEL=$(adb -s $DEVICE_IP:$DEVICE_PORT shell getprop ro.product.model)
     echo "📱 Device: $DEVICE_MODEL"
     
     # Check if Flutter recognizes device
@@ -199,7 +239,7 @@ read -p "6-digit pairing code: " PAIRING_CODE
 echo
 echo "Pairing with device..."
 
-~/platform-tools-new/platform-tools/adb pair $PAIRING_IP:$PAIRING_PORT $PAIRING_CODE
+adb pair $PAIRING_IP:$PAIRING_PORT $PAIRING_CODE
 
 if [ $? -eq 0 ]; then
     echo "✅ Pairing successful!"
@@ -208,12 +248,12 @@ if [ $? -eq 0 ]; then
     read -p "Connection port: " DEVICE_PORT
     
     echo "Connecting to device..."
-    ~/platform-tools-new/platform-tools/adb connect $DEVICE_IP:$DEVICE_PORT
+    adb connect $DEVICE_IP:$DEVICE_PORT
     
     if [ $? -eq 0 ]; then
         echo "✅ Device connected successfully!"
         echo "📱 Device details:"
-        ~/platform-tools-new/platform-tools/adb -s $DEVICE_IP:$DEVICE_PORT shell getprop ro.product.model
+        adb -s $DEVICE_IP:$DEVICE_PORT shell getprop ro.product.model
         
         echo
         echo "💡 Save these details for future connections:"
@@ -237,11 +277,11 @@ fi
 ping DEVICE_IP
 
 # Restart ADB server
-~/platform-tools-new/platform-tools/adb kill-server
-~/platform-tools-new/platform-tools/adb start-server
+adb kill-server
+adb start-server
 
 # Check ADB server status
-~/platform-tools-new/platform-tools/adb devices
+adb devices
 ```
 
 #### Connection Refused
@@ -280,22 +320,29 @@ flutter doctor -v
 #### Deployment Fails
 ```bash
 # Check device is authorized for app installation
-~/platform-tools-new/platform-tools/adb -s DEVICE_IP:PORT shell pm list packages | head -1
+adb -s DEVICE_IP:PORT shell pm list packages | head -1
 
 # Verify developer options are still enabled
-~/platform-tools-new/platform-tools/adb -s DEVICE_IP:PORT shell getprop ro.debuggable
+adb -s DEVICE_IP:PORT shell getprop ro.debuggable
 ```
 
 ### Performance Optimization
 
 #### Connection Stability
+
+Use Developer options → **"Stay awake"**, and keep the phone on a charger during test
+sessions.
+
 ```bash
 # Keep device awake during development
-~/platform-tools-new/platform-tools/adb shell svc power stayon true
-
-# Disable WiFi power saving (may help with connection stability)
-~/platform-tools-new/platform-tools/adb shell settings put global wifi_sleep_policy 2
+adb shell svc power stayon true
 ```
+
+> **`settings put global wifi_sleep_policy 2` does not work** and was previously
+> recommended here. It is a legacy setting that modern Android ignores: the phone still
+> dozes (`DreamService[DozeService] mDozeScreenState=3`, then `Screen: 0, mDozeStatus: 2`),
+> after which a `flutter run` session dies with "Lost connection to device". Setting it
+> gives false confidence that the drop-outs are fixed.
 
 #### Network Optimization
 - Use 5GHz WiFi when possible for better performance
