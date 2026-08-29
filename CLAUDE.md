@@ -68,6 +68,7 @@ single source of truth - do not duplicate it here.
 | `Gtk-WARNING cannot open display: :0` | Bash sandbox has no X11 display - the machine is not headless | Add `bin/dev_*.sh` to `sandbox.excludedCommands` (see the `sandbox-setup` skill) |
 | Build dies on `Read-only file system` in `/tmp` or `~/.local/share/kotlin` | Bash sandbox filesystem policy | Add the path to `sandbox.filesystem.allowWrite` (see the `sandbox-setup` skill) |
 | `Unable to create '.git/index.lock': File exists` | An index-writing git command was killed and left its lock | Check it is stale - `stat -c %y .git/index.lock` and `pgrep -a git` - then `rm -f .git/index.lock`. Never delete one while a git process is alive |
+| `could not lock config file .git/config: File exists` | Bash sandbox binds `/dev/null` over `.git/config.lock`. **The operation itself succeeded** - only the config write failed, so it exits 1 after working | Don't retry. Verify with `git ls-remote`/`git worktree list`, and prefer `git push origin HEAD` over `-u` (see the `sandbox-setup` skill) |
 
 ## Project Overview
 

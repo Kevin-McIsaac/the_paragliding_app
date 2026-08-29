@@ -44,6 +44,39 @@ A sandboxed build only works in the session's own working directory. Building in
 '.dart_tool/package_graph.json' (OS Error: Read-only file system)` - that is a
 wrong-directory error, not a missing permission.
 
+## `could not lock config file .git/config: File exists`
+
+**The operation already succeeded. Only the config side-effect failed.** Check before you
+retry — this exits non-zero after doing the work, so it reads as a failure and is not one.
+
+The sandbox binds `/dev/null` over `.git/config.lock`:
+
+```
+.git/config       -rw-r--r--  kmcisaac        <- real file, writable
+.git/config.lock  crw-rw-rw-  nobody  1, 3    <- /dev/null bind
+```
+
+Git writes config atomically — create `config.lock`, write, rename over `config` — so a
+pre-occupied lock path makes every config write fail with `File exists`. `.git/config`
+itself is writable, which is why adding it to `filesystem.allowWrite` does **not** help.
+
+Only `config.lock` is masked. `index.lock`, `HEAD.lock` and friends are not, which is why
+`git add` and `git commit` work normally and only config writes break. Affected:
+
+| command | what still worked | what failed |
+|---|---|---|
+| `git push -u origin <branch>` | the push - the branch is on the remote | recording the upstream |
+| `git worktree add -b <b> <path> origin/main` | nothing - it aborts | the tracking config, and it leaves an orphan branch |
+| `git config`, `git remote add`, `git branch --set-upstream-to` | — | the whole command |
+
+**Avoid it rather than configure around it:** `git push origin HEAD` instead of
+`git push -u`. You lose upstream tracking, which costs nothing when the branch is named
+explicitly. For `git worktree add`, drop `origin/main` and set the branch afterwards, or
+run that one command with the sandbox disabled.
+
+Verify the truth with `git ls-remote --heads origin <branch>` (for a push) or
+`git worktree list` — never from the exit code.
+
 ## Deeper reference
 
 The general mechanics of this sandbox (why it's still worth keeping under auto mode,
