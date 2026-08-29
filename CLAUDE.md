@@ -224,13 +224,12 @@ is in [docs/TIMESTAMPS.md](docs/TIMESTAMPS.md).
 
 ## 🌐 OpenAIP Integration
 
-**See the `openaip` skill** for endpoints, auth, request/response format, and
-troubleshooting - it is the single source of truth; do not duplicate it here.
+**See the `openaip` skill** for the data paths, the tile layer, and troubleshooting - it
+is the single source of truth; do not duplicate it here.
 
 One rule worth keeping inline because it costs real debugging time otherwise:
-**airspace overlays are a bulk per-country download and need no API key; airports,
-navaids and reporting points come from the authenticated API.** When airspace breaks,
-check the bucket, not the key.
+**airspace polygons are a keyless bulk per-country download; the API key is for the map
+tile layer only.** When airspace breaks, check the bucket, not the key.
 
 ## 🚀 Development Workflow (Claude-Optimized)
 

@@ -453,7 +453,10 @@ hotfix/*      # Emergency fixes
 
 - All data stored locally on device
 - No network transmission of personal data
-- Optional app-level PIN/biometric lock
+
+> "Optional app-level PIN/biometric lock" was listed here as a design item and is **not
+> implemented** — there is no PIN, biometric or password gate anywhere in `lib/`. Kept as
+> an unbuilt requirement; do not cite it as behaviour.
 
 ### 10.2 File Handling
 

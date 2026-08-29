@@ -479,18 +479,27 @@ This document defines the functional requirements for the The Paragliding App mo
 - Support database of 10,000+ flights (149 flights tested successfully)
 - Handle IGC files up to 10MB with timezone processing
 - Maintain 60fps UI interactions with optimized rendering
-- Comprehensive offline operation:
-  - 12-month map tile caching for complete offline maps
+- Local-first operation:
+  - Disk-backed map tile cache, shared by every map screen, capped at 300 MB and
+    surviving restarts (`MapTileProvider`) — a size cap, not a time-based retention policy
   - Local SQLite database with no cloud dependencies
-  - Cached 3D terrain data for offline 3D visualization
 - Memory-efficient operation (sub-100MB typical usage)
+
+> Not implemented, though earlier versions of this section stated them as fact:
+> "12-month map tile caching" (the cache is size-capped, not time-based) and "cached 3D
+> terrain data for offline 3D visualization" (no terrain caching exists). Note also that
+> offline operation is no longer a design driver — most launch sites have network access.
 
 ### 6.3 Security
 
-- Local data encryption
-- No cloud storage of personal data
-- Optional password protection
+- No cloud storage of personal data — the database and IGC files never leave the device
 - Secure file handling
+
+> **Not implemented.** This section previously listed "Local data encryption" and
+> "Optional password protection". Neither exists — there is no encryption, no SQLCipher,
+> no password or biometric gate anywhere in `lib/`. They are recorded here as unbuilt
+> requirements, not as behaviour. The user-facing privacy policy correctly claims only
+> local storage, and must not be changed to claim encryption unless it is actually built.
 
 ### 6.4 Usability
 
