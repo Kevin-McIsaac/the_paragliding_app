@@ -166,7 +166,18 @@ All boolean flags in the Perth dataset are `false`:
 
 4. **Sorting**: For altitude-based sorting, convert all altitudes to a common unit (feet) using the conversion rules.
 
-## API Access
+## Where this data actually comes from
+
+> **The app does not use the `/airspaces` REST API.** Airspace is bulk-downloaded per
+> country from the keyless export bucket
+> (`https://storage.openaip.net/openaip-system-exports/<cc>_asp.geojson`) by
+> `AirspaceCountryService`. The type codes and altitude encodings below apply to that
+> GeoJSON just the same — that is what makes this document useful. See the `openaip`
+> skill for the two data paths.
+
+The REST endpoint below is recorded for reference only; nothing in `lib/` calls it, and a
+per-viewport query against it is the usage pattern that got the previous bucket locked
+down in July 2026.
 
 - **Endpoint**: `https://api.core.openaip.net/api/airspaces`
 - **Parameters**: `bbox`, `limit`, `apiKey`

@@ -20,14 +20,18 @@ Welcome to The Paragliding App documentation. All documentation is organized in 
 
 - **[IGC Trimming](IGC_TRIMMING.md)** - Flight track data processing and trimming logic
 - **[Timestamps](TIMESTAMPS.md)** - UTC/local timezone conversion handling
-- **[Database](DATABASE.md)** - Database strategy and schema overview
+- **[Database](DATABASE.md)** - Migrations, schema-change process, clearing dev data
+- **[Site Catalogue Requirements](SITE_CATALOGUE_REQUIREMENTS.md)** - Bundled site catalogue rules
 - **[Adding Weather Providers](ADDING_WEATHER_PROVIDERS.md)** - Guide to integrating new weather data sources
+
+Much of the day-to-day workflow (running the app, testing, releasing, worktrees, OpenAIP,
+sandbox setup) lives in `.claude/skills/` rather than here.
 
 ## API Documentation
 
 External service integrations and API references:
 
-- **[OpenAIP API Structure](api/OPENAIP_API_STRUCTURE.md)** - Aviation data API (airspaces, airports, navaids)
+- **[OpenAIP API Structure](api/OPENAIP_API_STRUCTURE.md)** - Airspace type codes and altitude encoding (airports/navaids are not implemented)
 - **[Aviation Weather Center API](api/AVIATION_WEATHER_CENTER_API.md)** - NOAA aviation weather integration
 - **[Weather Stations](api/WEATHER_STATIONS.md)** - Weather station providers comparison
 - **[BOM Weather Stations](api/BOM_WEATHER_STATIONS.md)** - Australian Bureau of Meteorology integration
@@ -70,6 +74,7 @@ docs/
 ├── IGC_TRIMMING.md              # Claude Code references
 ├── TIMESTAMPS.md
 ├── DATABASE.md
+├── SITE_CATALOGUE_REQUIREMENTS.md
 ├── ADDING_WEATHER_PROVIDERS.md
 │
 ├── user/                        # User-facing documentation
@@ -131,4 +136,4 @@ When adding or updating documentation:
 
 ---
 
-*Last Updated: 2025-01-12*
+*Last Updated: 2026-08-29*

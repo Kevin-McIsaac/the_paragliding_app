@@ -8,99 +8,31 @@
 - **ALWAYS Use free maps in development. Test on Linux desktop by default; emulator/device only for 3D**
 - **ALWAYS Run `flutter analyze` and fix errors after complex, multi-file changes**
 
-## 🚀 Essential Commands
+## 🚀 Running the app
 
-### Linux Desktop Loop (default - no emulator needed)
+**See the `run-app` skill** for the full command reference - Linux desktop and Android,
+hot reload, screenshots, wireless adb, driving the UI. It is the single source of truth
+for running the app - do not duplicate it here.
 
-```bash
-# WORKING DIRECTORY: /home/kmcisaac/Projects/the_paragliding_app (repo root)
-bin/dev_run.sh                # Run on Linux desktop, seeded from dev_data/igc
-bin/dev_run.sh --reset        # Wipe dev database + documents first, then re-seed
-bin/dev_run.sh --profile      # Profile build - real timings, no hot reload
-bin/dev_run.sh -d chrome      # Same, on another device
+- **Debug builds** install as `com.theparaglidingapp.debug`, alongside any production
+  install - never `pm clear`/uninstall the unsuffixed package, it holds the real flight
+  log and exists nowhere else.
+- **Test data**: drop real `.igc` files into `dev_data/igc/` (gitignored). App state
+  (database + IGC copies) lives in `dev_data/app_documents/`, via `XDG_DOCUMENTS_DIR`,
+  and persists across runs - use `bin/dev_run.sh --reset` to start clean.
+- **Limitation**: no Linux implementation of `flutter_inappwebview`, so 3D map screens
+  show a placeholder on desktop. Use an Android device/emulator for 3D work.
 
-bin/dev_reload.sh             # Hot reload  (SIGUSR1 via dev_data/flutter.pid)
-bin/dev_reload.sh R           # Hot restart (SIGUSR2) - needed for main()/initState changes
+## ✅ Testing & quality
 
-bin/dev_screenshot.sh         # Screenshot the desktop app -> dev_data/screenshot.png
-bin/dev_input.sh tap 598 1004 # Tap/scroll/drag the desktop app (screenshot pixels)
-```
+**See the `testing` skill** for the full command reference, the `network`-tag schedule,
+and the fixture/in-memory-DB isolation rules that keep the suite from flaking. It is the
+single source of truth - do not duplicate it here.
 
-Hot reload also works with the standard `r` / `R` keys if you started it in a
-terminal; `bin/dev_reload.sh` is for when the app was started in the background.
-
-- **Test data**: drop real `.igc` files into `dev_data/igc/` (gitignored - real coordinates).
-  They import on first launch only; `--reset` starts over. Seeding is driven by
-  `--dart-define=SEED_IGC_DIR=...` and handled by `lib/utils/dev_seed.dart` (never runs in release).
-  Only the **8 most recent** flights are imported, by the `YYMMDD` filename prefix - a full
-  archive is hundreds of files and takes minutes. Drop the whole archive in and raise the cap
-  when a task needs more: `SEED_IGC_LIMIT=20 bin/dev_run.sh --reset` (`0` seeds everything).
-- **App state** (database + IGC copies) lives in `dev_data/app_documents/`, redirected
-  there via `XDG_DOCUMENTS_DIR`. It persists across runs — the seeder only imports when
-  the flights table is empty, so relaunching keeps your data. Use `--reset` to start clean.
-- **Limitation**: `flutter_inappwebview` has no Linux implementation, so the 3D map screens
-  show a "3D Map Not Available" placeholder. Use an Android device/emulator for 3D work.
-
-### Android Loop (emulator/device - required for 3D)
-
-The same script drives a device - pass `-d` with an id from `flutter devices`:
-
-```bash
-bin/dev_run.sh -d "<device>" --background   # detached; returns once the app is up
-bin/dev_reload.sh                           # hot reload (same as desktop)
-```
-
-Debug builds install as `com.theparaglidingapp.debug` with the launcher name
-"Paragliding App (debug)", so they sit alongside a Play Store install instead of
-replacing it. Without that suffix the debug keystore clashes with the release
-signature (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) and Flutter silently uninstalls the
-production app, taking its flight database with it.
-
-**See the `run-app` skill** (`.claude/skills/run-app/`) for the full workflow: device ids,
-wireless adb pairing, screenshots, and the debug-vs-production package trap. It is the
-single source of truth for running the app - do not duplicate it here.
-
-### Test & Quality Commands
-
-```bash
-flutter analyze                       # Check for errors (run after complex, mult-file change)
-flutter test                          # Run all tests
-flutter test test/specific_test.dart  # Run specific test
-flutter test --tags network --run-skipped  # Live-API tests, skipped by default
-kill "$(cat dev_data/flutter.pid)"    # Stop a running app
-```
-
-**The `network` tests run weekly in CI**, on their own schedule
-(`.github/workflows/network.yml`, Tuesdays), not on pushes or pull requests. They are the
-only checks on things that move without anyone touching this repository - the bundled
-catalogue falling behind what the producer publishes, the OpenAIP export bucket being locked
-down, a launch changing its name, altitude, wind or guide under the baseline that pins them.
-A red run there means the world moved, not that your branch is broken; the log is kept as an
-artifact, and a timeout or 5xx just wants re-running. Run it on demand from the Actions tab
-before cutting a release.
-
-**Plain `flutter test` is fine locally.** It used to fail about 1 run in 3, so this file
-told you to always pass `--concurrency=1`. Issue #280 fixed the underlying test problems;
-measured over 16 consecutive runs on an 8-core dev box, parallel is now 0/16 failures and
-the fastest of the three modes (mean 46s, vs 60s serial, vs 81s serial before the fix).
-
-Keep the tests isolated, or this comes back:
-
-- **Never write fixtures to a fixed path.** Use `TestHelpers.fixturePath('name.igc')`, which
-  gives each test process its own directory. Fixed `/tmp` paths caused a real failure -
-  two test files both wrote `/tmp/test_india.igc`, and one run read a fixture back empty
-  (`Parsed 0 track points, pilot: Unknown`).
-- **The test database is in-memory** (`TestHelpers.initializeDatabaseForTesting()` sets
-  `DatabaseHelper.databasePathOverride`). Don't reintroduce a file-backed one, and don't
-  add per-test `recreateDatabase()` unless a test actually writes - eight read-only tests
-  were rebuilding the schema and re-seeding 249 country codes nine times per run.
-
-**CI still passes `--concurrency=1`** (`.github/workflows/ci.yml`). That is deliberate and
-not stale: parallel was only verified on an 8-core dev machine, and hosted runners have
-far fewer cores. Re-measure there before changing it.
-
-`concurrency:` cannot be set in `dart_test.yaml` - `flutter test` always passes its own
-`-j` and overrides the file. It has to be on the command line.
+- `flutter analyze` after complex, multi-file changes.
+- `flutter test` (plain - no concurrency flag needed locally). CI still uses
+  `--concurrency=1`.
+- `kill "$(cat dev_data/flutter.pid)"` to stop a running app.
 
 ## 📁 Key Files (Most Accessed)
 
@@ -113,38 +45,11 @@ far fewer cores. Re-measure there before changing it.
 | `lib/presentation/screens/flight_list_screen.dart` | Main flight list | High |
 | `lib/presentation/screens/flight_detail_screen.dart` | Flight details | Medium |
 
-## 📂 File Structure Quick Reference
+## 📂 Code Layout
 
-```
-lib/
-├── services/                    # Core business logic (MOST IMPORTANT)
-│   ├── database_service.dart    # All DB operations
-│   ├── flight_track_loader.dart # Single source of truth for flight data
-│   ├── logging_service.dart     # Claude-optimized logging
-│   ├── igc_import_service.dart  # File import workflow
-│   └── takeoff_landing_detector.dart
-├── presentation/
-│   ├── screens/                 # Full-screen UI components
-│   │   ├── flight_list_screen.dart      # Main app screen
-│   │   ├── flight_detail_screen.dart    # Flight details
-│   │   ├── igc_import_screen.dart       # File import UI
-│   │   └── data_management_screen.dart  # Settings/admin
-│   └── widgets/
-│       ├── common/              # Reusable widgets
-│       │   ├── app_stat_card.dart       # Statistics display
-│       │   ├── app_expansion_card.dart  # Collapsible content
-│       │   ├── app_empty_state.dart     # Empty list states
-│       │   └── app_error_state.dart     # Error displays
-│       └── flight_*_widget.dart # Flight-specific components
-├── data/
-│   ├── models/                  # Data structures
-│   │   ├── flight.dart          # Core flight model
-│   │   ├── igc_file.dart        # Track data structure
-│   │   └── site.dart / wing.dart # Supporting models
-│   └── datasources/
-│       └── database_helper.dart # SQLite schema & migrations
-└── main.dart                    # App entry point
-```
+`lib/services/` (business logic - start here), `lib/presentation/screens/` and
+`lib/presentation/widgets/{common,flight_*}`, `lib/data/models/` and
+`lib/data/datasources/database_helper.dart` (schema & migrations).
 
 ## 🚨 Common Error Patterns & Solutions
 
@@ -160,8 +65,8 @@ lib/
 | Hot reload fails | State corruption | Use `R` (hot restart) instead of `r` |
 | App won't start | Already running | `kill "$(cat dev_data/flutter.pid)"`, then start again |
 | Hot reload does nothing | App not actually running | `kill -0 "$(cat dev_data/flutter.pid)"` - no pid file means it exited |
-| `Gtk-WARNING cannot open display: :0` | Bash sandbox has no X11 display - the machine is not headless | Add `bin/dev_*.sh` to `sandbox.excludedCommands` (see "The Bash sandbox") |
-| Build dies on `Read-only file system` in `/tmp` or `~/.local/share/kotlin` | Bash sandbox filesystem policy | Add the path to `sandbox.filesystem.allowWrite` (see "The Bash sandbox") |
+| `Gtk-WARNING cannot open display: :0` | Bash sandbox has no X11 display - the machine is not headless | Add `bin/dev_*.sh` to `sandbox.excludedCommands` (see the `sandbox-setup` skill) |
+| Build dies on `Read-only file system` in `/tmp` or `~/.local/share/kotlin` | Bash sandbox filesystem policy | Add the path to `sandbox.filesystem.allowWrite` (see the `sandbox-setup` skill) |
 | `Unable to create '.git/index.lock': File exists` | An index-writing git command was killed and left its lock | Check it is stale - `stat -c %y .git/index.lock` and `pgrep -a git` - then `rm -f .git/index.lock`. Never delete one while a git process is alive |
 
 ## Project Overview
@@ -176,40 +81,15 @@ The Paragliding App is a free, Android-first, cross-platform application for log
 
 ## Claude Code Integration
 
-### The Bash sandbox (per-developer, not configured in this repo)
+**Bash sandbox** (per-developer, not configured in this repo): if a sandboxed command
+fails looking like a headless machine, a dead network, or a read-only filesystem, it
+usually isn't - see the `sandbox-setup` skill for this project's `excludedCommands`,
+`filesystem.allowWrite`, and `network.strictAllowlist` requirements.
 
-Claude Code's Bash sandbox is set up in each developer's `~/.claude/settings.json`, so nothing
-in this repo turns it on and you will not see it in a diff. If yours is enabled, three things
-about *this* project need configuration that is not obvious. Each was found by a failed run.
+### Logs
 
-- **`bin/dev_*.sh`, `adb` and `flutter devices` belong in `sandbox.excludedCommands`.** A
-  sandboxed shell gets no X11 display and no network interface at all (`ip addr` shows only
-  `lo`), so a desktop launch dies with `Gtk-WARNING cannot open display: :0`, adb-over-Wi-Fi
-  fails with "Network is unreachable", and `flutter devices` lists only Linux and Chrome.
-  Those commands have to run outside the sandbox. It reads exactly like a headless machine
-  and is not one - that misdiagnosis once led to hunting for `Xvfb`.
-- **Android builds need three extra `filesystem.allowWrite` paths**: `/tmp` (Gradle's
-  `mergeDebugJavaResource` writes via Java's `java.io.tmpdir`, which is hardcoded to `/tmp`
-  and **ignores `TMPDIR`**), `~/.local/share/kotlin` (the Kotlin compile daemon), and
-  `~/.config/.android` (the debug keystore - *not* `~/.android`, which is a different path).
-- **With `network.strictAllowlist` on, every missing host is a hard failure.** Gradle needs
-  `dl.google.com`, `maven.google.com`, `repo.maven.apache.org`, `repo1.maven.org`,
-  `services.gradle.org` and `plugins.gradle.org` (`android/build.gradle.kts` declares
-  `google()` and `mavenCentral()`); `flutter test --tags network` needs `storage.openaip.net`.
-
-A sandboxed build only works in the session's own working directory. Building in a *different*
-checkout fails early at `Cannot open file, path = '.dart_tool/package_graph.json' (OS Error:
-Read-only file system)` - that is a wrong-directory error, not a missing permission.
-
-### Log Files for Monitoring
-
-- **Output**: `dev_data/flutter.log` (full app output, truncated on each run)
-- **PID**: `dev_data/flutter.pid` (written once the app is up, removed on exit - so its
-  presence *is* the readiness check)
-
-Both are per-checkout, so worktrees do not fight over them.
-
-`flutter.log` ends with an explicit marker when the session dies:
+`dev_data/flutter.log` is the app's output on desktop, and the only place build and compile
+errors appear. It ends with an explicit marker when the session dies:
 
 ```
 --- flutter exited 2026-08-04 10:52:42 - log ends here; the app may still be running on the device ---
@@ -218,45 +98,10 @@ Both are per-checkout, so worktrees do not fight over them.
 Without it, a log that stopped because `flutter run` died is indistinguishable from one with
 nothing to report — a dropped session was once read as "the app was never touched", and the
 wrong conclusion drawn from it. **On a device the app usually keeps running after flutter
-detaches**, so the marker means the log stopped, not the app. Switch to `bin/dev_logs.sh`
-from there: logcat is written by the app itself and survives a dropped `flutter run`.
+detaches**, so the marker means the log stopped, not the app.
 
-### Reading logs from a device
-
-`bin/dev_logs.sh` reads logcat over adb — the only option for a Play Store install, where
-there is no `flutter run` at all. There is no logcat on Linux desktop, so `flutter.log`
-remains the only log there, and it is also the only place build and compile errors appear.
-
-```bash
-bin/dev_logs.sh --keys       # just the [API_KEYS_STATUS] line
-bin/dev_logs.sh -g cesium    # search the whole buffer
-bin/dev_logs.sh -f           # follow live
-bin/dev_logs.sh --tee        # follow live, appending to dev_data/logcat.log
-```
-
-**The logcat ring buffer is too small to read after the fact, and it is not `adbd`'s fault.**
-This file blamed `adbd` retrying a USB bind for years; measuring it on 2026-08-11 found the
-real source is `android.hardware.thermal-service.pixel`, which logs one `I pixel-thermal:`
-line per sensor per poll — 84.5 lines/s, 79% of the buffer, leaving **~30 seconds** of
-retention in the 256 KiB default. The wrong attribution sent a debugging session looking at
-USB and adb, so prefer the numbers over the story:
-
-```bash
-adb shell setprop persist.log.tag.pixel-thermal S        # survives reboot, needs no root
-adb shell setprop persist.log.tag.libPixelUsbOverheat S  # the second-largest source
-adb shell logcat -G 4M     # re-apply each boot - persist.logd.size is refused without root
-```
-
-Measured after: **9.5 lines/s and ~65 min** of retention. `trusty` looks like the biggest
-flooder in a plain `logcat -d` histogram and is a red herring — it is in the **kernel**
-buffer, a separate 256 KiB ring that costs the app's log nothing.
-
-Even 65 minutes is still a ring, so for anything you intend to read later use
-`bin/dev_logs.sh --tee`: it copies the filtered stream to a host file where nothing ages
-out. It appends and brackets each run with a marker, for the same reason `flutter.log` has
-an exit marker — a capture that died with the adb connection must not read as an app with
-nothing to say. The phone also dozes when idle, which kills `flutter run` (and with it
-`dev_input.sh`, though not the app); Developer options → **"Stay awake"** avoids it.
+For device logs (`bin/dev_logs.sh`, logcat ring-buffer tuning) see the `run-app` skill, and
+for analysing a log against the performance thresholds use the `flutter-log-analyzer` agent.
 
 ### Claude-Specific Patterns
 
@@ -280,20 +125,6 @@ try {
 }
 ```
 
-### Testing Integration  
-
-```bash
-# Run tests with Claude-readable output
-flutter test --reporter=expanded          # Detailed test output
-flutter test test/services/               # Test specific directory
-flutter test test/flight_test.dart        # Single test file
-flutter analyze --write=analyzer.log      # Save analysis to file
-
-# Generate coverage for Claude analysis
-flutter test --coverage
-genhtml coverage/lcov.info -o coverage/html/
-```
-
 ## Development Principles
 
 ### Core Rules
@@ -308,9 +139,8 @@ genhtml coverage/lcov.info -o coverage/html/
 ### Testing & Performance
 
 - Add Claude-readable logging for debugging and performance
-- Run analyzer to check for errors after complex multi-file changes
-- Measure performance before optimizing
-- Default to emulator for testing
+- Measure performance before optimizing; the thresholds live in the
+  `flutter-log-analyzer` agent
 
 ### Verifying work: check the artifact, not the status
 
@@ -340,103 +170,14 @@ So:
 - **A guard that has only been seen passing is unverified.** Both release assertions in
   `build.yml` were deliberately made to fail once, on a throwaway branch, to prove they work.
 
-## ✅❌ Code Patterns & Anti-Patterns
+## Conventions
 
-### Logging (ALWAYS use LoggingService)
-
-```dart
-import 'package:the_paragliding_app/services/logging_service.dart';
-
-// ✅ Correct logging patterns
-LoggingService.info('General information');
-LoggingService.error('Database error', error, stackTrace);
-LoggingService.structured('IGC_IMPORT', {'file': 'flight.igc', 'points': 1091});
-LoggingService.performance('Database Query', duration, 'flights loaded');
-
-// ❌ NEVER use these
-print('Debug message');              // Use LoggingService.info() instead
-debugPrint('Flutter debug');         // Use LoggingService.debug() instead
-developer.log('Developer log');      // Use LoggingService.info() instead
-```
-
-### Flight Data (Single Source of Truth)
-
-```dart
-// ✅ Always use FlightTrackLoader
-final igcFile = await FlightTrackLoader.loadFlightTrack(flight);
-final trackPoints = igcFile.trackPoints; // Already trimmed and zero-based
-final distance = igcFile.calculateGroundTrackDistance();
-
-// ❌ Never parse IGC files directly
-final rawIgc = File(flight.igcFilePath).readAsStringSync(); // Wrong!
-final parser = IgcParser(); // Don't use directly in UI
-final customTrimmed = trackPoints.sublist(10, -10); // Wrong indexing!
-```
-
-### Database Operations
-
-```dart
-// ✅ Use DatabaseService methods
-final flights = await DatabaseService.instance.getAllFlights();
-await DatabaseService.instance.insertFlight(flight);
-
-// ❌ Never use raw SQLite directly
-final db = await openDatabase('path'); // Use DatabaseService instead
-db.rawQuery('SELECT * FROM flights'); // Use typed methods instead
-```
-
-### Widget Creation Patterns
-
-```dart
-// ✅ Follow existing widget patterns
-AppStatCard.flightList(
-  title: 'Total Flights',
-  value: '42',
-  icon: Icons.flight,
-);
-
-AppExpansionCard.dataManagement(
-  title: 'Export Data',
-  children: [exportButtons],
-);
-
-AppEmptyState.flights(
-  message: 'No flights logged yet',
-  actionButton: AddFlightButton(),
-);
-
-// ❌ Don't create custom cards when standard ones exist
-Card(child: ListTile(...)); // Use AppStatCard instead
-ExpansionTile(...);         // Use AppExpansionCard instead
-```
-
-### State Management
-
-```dart
-// ✅ Simple StatefulWidget pattern (project standard)
-class FlightListScreen extends StatefulWidget {
-  @override
-  _FlightListScreenState createState() => _FlightListScreenState();
-}
-
-class _FlightListScreenState extends State<FlightListScreen> {
-  List<Flight> _flights = [];
-  
-  @override
-  void initState() {
-    super.initState();
-    _loadFlights();
-  }
-  
-  Future<void> _loadFlights() async {
-    final flights = await DatabaseService.instance.getAllFlights();
-    setState(() => _flights = flights);
-  }
-}
-
-// ❌ Don't use complex state management
-// Avoid Provider, Bloc, Riverpod - this project uses simple StatefulWidget
-```
+`LoggingService` for all output (never `print`/`debugPrint`/`developer.log`),
+`FlightTrackLoader` for all flight data, `DatabaseService` for all queries (never raw
+`openDatabase`/`rawQuery`), and simple `StatefulWidget` state — no Provider, Bloc or
+Riverpod. Follow the surrounding code for shape; the reusable widgets are in
+`lib/presentation/widgets/common/` (`AppStatCard`, `AppExpansionCard`, `AppEmptyState`,
+`AppErrorState`, `AppLoadingSkeleton`) — use them rather than raw `Card`/`ExpansionTile`.
 
 ### Log Format (Claude-optimized)
 
@@ -446,7 +187,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
 [P][+2.1s] Database Query | 156ms | flights loaded | at=database_service.dart:245
 ```
 
-
 ### Data Flow
 
 ```
@@ -455,112 +195,14 @@ IGC File (Full/Archival) → Detection → Store Full Indices → Load Trimmed �
 
 **Key Services**: `FlightTrackLoader` (single source), `TakeoffLandingDetector`, `IgcParser`, `IgcImportService`
 
-## 📊 Performance Guidelines & Thresholds
-
-### Database Performance
-
-| Operation | Target Time | Alert Threshold | Notes |
-|-----------|-------------|-----------------|-------|
-| Load all flights | <200ms | >500ms | ~5000 flights max |
-| Single flight query | <50ms | >100ms | By ID or simple filter |
-| IGC file loading | <1s | >3s | Includes parsing + trimming |
-| Database startup | <300ms | >1s | App launch impact |
-
-### UI Performance
-
-| Component | Target | Alert | Notes |
-|-----------|--------|-------|-------|
-| Hot reload | <2s | >5s | Code changes |
-| Screen navigation | <300ms | >1s | Between screens |
-| List scrolling | 60fps | <30fps | Flight list with 1000+ items |
-| Widget rebuilds | Minimal | Excessive | Use `const` constructors |
-
-### Memory Guidelines
-
-- **IGC File Cache**: Max 10 files in `FlightTrackLoader` LRU cache
-- **Database Connections**: Use single instance via `DatabaseService`
-- **Widget State**: Clear heavy objects in `dispose()`
-- **Image Memory**: Lazy load screenshots, compress if >1MB
-
-### Optimization Tips
-
-```dart
-// ✅ Efficient list building
-ListView.builder(
-  itemCount: flights.length,
-  itemBuilder: (context, index) => FlightListItem(flights[index]),
-);
-
-// ✅ Const constructors for static widgets
-const AppStatCard.flightList(title: 'Static Title');
-
-// ✅ Dispose heavy resources
-@override
-void dispose() {
-  _controller?.dispose();
-  _subscription?.cancel();
-  super.dispose();
-}
-
-// ❌ Performance anti-patterns
-ListView(children: flights.map((f) => Widget(f)).toList()); // Builds all at once
-setState(() {}); // In build() method - causes infinite rebuilds
-```
-
-## 🔍 Quick Reference Tables
-
-### Database Tables (Core Schema)
-
-| Table | Primary Key | Key Columns | Purpose |
-|-------|-------------|-------------|---------|
-| `flights` | `id` | `date`, `site_id`, `wing_id` | Flight records |
-| `sites` | `id` | `name`, `latitude`, `longitude` | Launch/landing sites |
-| `wings` | `id` | `manufacturer`, `model` | Equipment |
-| `igc_files` | `flight_id` | `filename`, `track_points` | Track data |
-
-### Common File Operations
-
-| Task | File/Service | Method | Notes |
-|------|-------------|--------|-------|
-| Load flight data | `FlightTrackLoader` | `loadFlightTrack(flight)` | Single source of truth |
-| Database query | `DatabaseService` | `getAllFlights()`, `getFlight(id)` | Typed methods |
-| Import IGC | `IgcImportService` | `importIgcFile(path)` | Full workflow |
-| Logging | `LoggingService` | `info()`, `error()`, `structured()` | Claude-optimized |
-
-### Widget Quick Reference
-
-| UI Pattern | Widget | Usage |
-|------------|--------|--------|
-| Statistics display | `AppStatCard.flightList()` | Flight counts, totals |
-| Empty states | `AppEmptyState.flights()` | No data scenarios |
-| Expandable content | `AppExpansionCard.dataManagement()` | Settings panels |
-| Loading states | `AppLoadingSkeleton` | Data fetching |
-| Error display | `AppErrorState` | Error handling with retry |
-
-## Database Development
+## Database
 
 **The app is published, so schema and data changes need real migrations.** A user's flight
-log exists nowhere else; clearing it is unrecoverable.
+log exists nowhere else; clearing it is unrecoverable. `databaseVersion` is 5, with real
+`_onUpgrade` branches for 2–5.
 
-### Schema Change Process
-
-1. Bump `databaseVersion` in `database_helper.dart`
-2. Add an `if (oldVersion < N)` branch to `_onUpgrade`, following the existing ones
-3. **Log how many rows a data migration changed.** A migration that rewrites user data
-   silently cannot be audited afterwards - see `backfillDetectedDurations`
-4. Test the upgrade path, not just the fresh-install path. `test/duration_backfill_test.dart`
-   is the pattern: annotate the migration `@visibleForTesting` and drive it directly, rather
-   than duplicating its SQL in the test where the two can drift apart
-5. Verify a fresh install still works - `_onCreate` and `_onUpgrade` must converge on the
-   same schema
-
-### Clearing data (development only)
-
-Clearing app data is fine on a dev machine and never appropriate as a user-facing fix.
-On Linux desktop use `bin/dev_run.sh --reset`. On Android: Settings → Apps →
-**Paragliding App (debug)** → Storage → Clear Data. Pick the "(debug)" entry - a production
-install may sit next to it under "The Paragliding App", and clearing that one destroys real
-flight data.
+See [docs/DATABASE.md](docs/DATABASE.md) for the schema-change process and the
+development-only ways to clear data.
 
 ## Key Calculations & Data
 
@@ -571,12 +213,8 @@ flight data.
 - **Climb Rate**: Pressure if available, otherwise GPS with time deltas
 - **Calculate**: Both instantaneous and 15s trailing average climb rates
 
-### Timestamp Handling
-
-- **IGC**: UTC time (HHMMSS) → Detect timezone from GPS → Convert to local
-- **Display**: Local timezone of launch location
-- **Database**: ISO8601 date + HH:MM times + timezone offset
-- **Cesium**: ISO8601 with timezone (e.g., "2025-07-11T11:03:56.000+02:00")
+Timestamp handling (UTC → GPS-derived timezone → local, and the Cesium/database formats)
+is in [docs/TIMESTAMPS.md](docs/TIMESTAMPS.md).
 
 ### External Dependencies
 
@@ -584,230 +222,27 @@ flight data.
 - **GPS**: Primary data source for all calculations
 - **IGC Files**: Immutable once imported, parse once and store results
 
-## 🌐 OpenAIP API Integration
+## 🌐 OpenAIP Integration
 
-### Overview
+**See the `openaip` skill** for the data paths, the tile layer, and troubleshooting - it
+is the single source of truth; do not duplicate it here.
 
-The Paragliding App integrates with OpenAIP Core API for aviation data overlays including airspaces, airports, navigation aids, and reporting points.
-
-### Two different data paths — do not confuse them
-
-**Airspace overlays do not use the API and need no API key.** They are bulk-downloaded per
-country from OpenAIP's public daily export bucket by `AirspaceCountryService`, stored in the
-local database, and read back by bounding box. That is what makes airspace work offline,
-which matters because launch sites usually have no signal.
-
-```
-https://storage.openaip.net/openaip-system-exports/<cc>_asp.geojson   # e.g. au_asp.geojson
-```
-
-The API below is used for the *other* layers (airports, navaids, reporting points) and for
-OpenAIP tile URLs — those do need the key.
-
-This distinction cost real debugging time: airspace was failing while the base map rendered
-fine, which looked like an API-key problem and is not one. When airspace breaks, check the
-bucket, not the key.
-
-**The bucket moved in July 2026.** The old Google Cloud Storage bucket
-(`storage.googleapis.com/29f98e10-...`) was switched to *Requester Pays* on ~2026-07-23 after
-OpenAIP was billed four-figure egress costs, and now returns `HTTP 400 UserProjectMissing` to
-every anonymous request — see openAIP/openaip#468 and #469. The S3 endpoint above is the
-sanctioned replacement, rate limited to 20 req/s.
-
-Two consequences worth keeping:
-
-- **Do not fetch airspace per viewport.** A viewport query is ~250 KiB and fires on every
-  pan/zoom; that is the usage pattern that got the previous bucket locked down. One country
-  is one request.
-- The endpoint returns `content-encoding: utf-8`, which is a charset, not an encoding. Dart
-  ignores it (only gzip is auto-uncompressed) so the app is fine, but `curl --compressed`
-  fails on it — use plain `curl` when reproducing by hand.
-
-`test/airspace_country_source_test.dart` guards both the URL and, under the `network` tag,
-that the bucket still serves usable GeoJSON.
-
-### API Endpoints & Authentication
-
-```
-Base URL: https://api.core.openaip.net/api
-Authentication: API key as query parameter (?apiKey=xxx)
-```
-
-**Working Endpoints:**
-
-- `/api/airspaces` - Controlled airspace polygons (CTR, TMA, CTA, danger areas, etc.)
-- `/api/airports` - Airport point data with details and frequencies
-- `/api/navaids` - Navigation aids (VOR, NDB, DME, waypoints)
-- `/api/reporting-points` - VFR reporting points with altitude restrictions
-
-### Request Format
-
-```http
-GET /api/{endpoint}?bbox=west,south,east,north&limit=500&apiKey={key}
-Headers:
-  Accept: application/json
-  User-Agent: TheParaglidingApp/1.0
-```
-
-### Response Format
-
-All endpoints return GeoJSON FeatureCollection with:
-
-```json
-{
-  "type": "FeatureCollection",
-  "features": [
-    {
-      "_id": "unique_identifier",
-      "geometry": { "type": "Point|Polygon", "coordinates": [...] },
-      "properties": { endpoint-specific data }
-    }
-  ]
-}
-```
-
-### Code Integration
-
-**Service Architecture:**
-
-- `AirspaceGeoJsonService` - Handles airspace polygons and styling
-- `AviationDataService` - Handles airports, navaids, reporting points
-- `AirspaceOverlayManager` - Coordinates all aviation data layers
-- `OpenAipService` - Manages API keys and layer preferences
-
-**Key Implementation Points:**
-
-```dart
-// ✅ Correct authentication (URL parameter, not headers)
-final url = 'https://api.core.openaip.net/api/airports'
-    '?bbox=$west,$south,$east,$north&limit=500&apiKey=$apiKey';
-
-// ✅ Standard headers (same as working airspace service)
-final headers = {
-  'Accept': 'application/json',
-  'User-Agent': 'TheParaglidingApp/1.0',
-};
-
-// ✅ Individual caching per data type
-final airports = await AviationDataService.instance.fetchAirports(bounds);
-```
-
-### Visual Representation
-
-- **Airspaces**: Semi-transparent polygons with type-specific colors
-- **Airports**: Circular markers with airplane icons, sized by category
-- **Navaids**: Symbol markers (⬡ VOR, ● NDB, ◇ DME, ◉ Waypoints)
-- **Reporting Points**: Triangle markers with altitude restriction tooltips
-
-### Troubleshooting
-
-| Issue | Cause | Solution |
-|-------|--------|----------|
-| 401 Auth Failed | Invalid API key | Check OpenAIP account, verify key |
-| 404 Not Found | Wrong endpoint | Use full names: `/airports` not `/apt` |
-| No data returned | Geographic bounds | Try different location/zoom level |
-| Headers auth failure | Wrong auth method | Use query parameter, not headers |
-
-### Logging Integration
-
-All API calls generate structured logs:
-
-```
-[AIRPORTS_API_REQUEST] url=*** | bounds=*** | has_api_key=true
-[AIRPORTS_API_SUCCESS] airports_count=15 | cache_key=***
-```
+One rule worth keeping inline because it costs real debugging time otherwise:
+**airspace polygons are a keyless bulk per-country download; the API key is for the map
+tile layer only.** When airspace breaks, check the bucket, not the key.
 
 ## 🚀 Development Workflow (Claude-Optimized)
 
 ### Worktrees
 
-Do feature and bugfix work in a git worktree, one per task, branched from `origin/main`.
-They live in `.claude/worktrees/` (gitignored) and are removed once the work merges.
+**See the `worktree` skill** for creating, bootstrapping (`bin/setup_worktree.sh`), and
+merging/cleaning up a worktree - it is the single source of truth; do not duplicate it
+here.
 
-**Several Claude sessions often share this one checkout** - background jobs, plus whatever
-you have open interactively. Two guards keep them off each other:
-
-- `worktree.bgIsolation: "worktree"` (`.claude/settings.json`) blocks Edit/Write in the
-  shared checkout from a background session until it calls EnterWorktree.
-- `.claude/hooks/guard-shared-checkout.sh` covers what that misses. bgIsolation does not
-  gate **Bash**, and on 2026-08-04 a background job that was correctly isolated for its
-  edits still ran `git checkout`/`reset` against the shared checkout, switching the branch
-  out from under another session mid-rebase. The hook asks before a background session runs
-  a ref-moving git command outside a worktree. Interactive sessions are never gated, and
-  read-only git (`status`/`log`/`diff`/`fetch`) passes untouched.
-
-If you see that prompt, the honest question is whether the command belongs in a worktree
-instead. Approving is fine when you asked for it.
-
-A fresh worktree has none of the gitignored files. After creating one, from
-`the_paragliding_app/`:
-
-```bash
-MAIN=/home/kmcisaac/Projects/the_paragliding_app/the_paragliding_app
-cp "$MAIN/env.json" env.json                              # API keys
-cp "$MAIN/android/key.properties" android/key.properties  # release signing
-flutter pub get
-```
-
-Neither omission fails loudly, and the signing one is dangerous:
-
-- **`env.json` missing** — everything builds and runs, but FFVL weather, OpenAIP overlays
-  and Cesium 3D are silently unconfigured. `bin/dev_run.sh` warns; a bare `flutter run`
-  does not. Confirm with the `[API_KEYS_STATUS]` line at startup.
-- **`android/key.properties` missing** — `flutter build appbundle --release` **succeeds**
-  and signs with the *debug* key. `android/app/build.gradle.kts` falls back deliberately
-  and only `println`s a warning, which is invisible in normal build output. Play rejects
-  the upload. Always verify before uploading:
-
-  ```bash
-  keytool -printcert -jarfile build/app/outputs/bundle/release/app-release.aab | grep -E "Owner:|SHA256:"
-  ```
-
-  Expect `Owner: CN=Kevin McIsaac, ...`. `CN=Android Debug` means the fallback fired.
-  The fingerprint must match `upload-cert-new.pem`:
-  `openssl x509 -in ../upload-cert-new.pem -noout -fingerprint -sha256`
-
-Also absent: `.dart_tool/`, `build/`, and `dev_data/` — re-seed `dev_data/igc` only if the
-task needs the app to actually run.
-
-**Merging from a worktree: `gh pr merge <n> --squash`, without `-d`.** The repo has
-*Automatically delete head branches* enabled, so GitHub removes the branch server-side and
-gh runs no local git at all. Passing `-d` asks gh to delete the **local** branch too, which
-makes it run `git checkout main` - and that fails from a worktree, because `main` is checked
-out in the shared checkout. It fails *after* the API merge has already gone through, so the
-PR is merged while the command exits 1: check `gh pr view <n> --json state` before assuming
-it did not land. Clean up locally instead:
-
-```bash
-git worktree remove .claude/worktrees/<name>
-git branch -D <name>               # -D, not -d: see below
-git fetch --prune origin
-git merge --ff-only origin/main    # from the shared checkout
-```
-
-`-D` is not carelessness. A squash merge rewrites the work into a single new commit, so
-the branch's own commits are never ancestors of `main` and `git branch -d` refuses it as
-"not fully merged" - which is true of the commits and false of the content. Confirm the
-content landed by checking the PR is `MERGED`, not by whether `-d` is willing.
-
-**The EnterWorktree/ExitWorktree tooling asks that same question**, and refuses to remove a
-merged worktree - "Removing will discard this work permanently" - until told
-`discard_changes: true`. It is the same false negative rather than a second problem; it
-fired on 2026-08-15 for the already-merged `network.yml` branch. Answer it the same way, and
-prove the content landed by comparing trees instead of trusting either tool:
-
-```bash
-gh pr view <n> --json state                       # MERGED is the authority
-git diff --stat <branch> origin/main -- <paths>   # empty output means nothing is lost
-```
-
-Changing merge strategy does not avoid this, and **rebase merge especially does not** -
-GitHub re-parents each commit onto `main`, so the SHAs change and ancestry breaks exactly as
-it does under squash. Only a real merge commit preserves it, at the cost of the squash body,
-which is where the PR description on most of these commits comes from. Running
-`git reset --hard origin/main` in the worktree first silences both prompts, but it discards
-the local commit for real - on a branch that did *not* merge that destroys the work, which
-is precisely the case the prompt exists to catch. Confirm the prompt instead.
+Two facts worth keeping top-of-mind: worktrees live in `.claude/worktrees/` (gitignored),
+branched from `origin/main`; and after a squash merge, cleanup uses `git branch -D` (not
+`-d`) - the branch's own commits are never ancestors of `main` even though the content
+landed, so `-d` refuses it as a false negative.
 
 ### Standard Development Process
 
@@ -834,7 +269,7 @@ troubleshooting). Do not duplicate either one here.
 | Debug UI (desktop) | `bin/dev_screenshot.sh` → Read the PNG; `bin/dev_input.sh` to tap/scroll | Both go via the VM service, not the compositor - no screenshot or input tool works under Crostini |
 | Debug UI (Android) | `adb exec-out screencap -p > dev_data/screenshot.png` → analyze | Unlock the phone first |
 | Performance check | `grep "\[P\]" dev_data/flutter.log` | Performance logs |
-| Schema change | Clear data → restart → reimport | Dev workflow |
+| Schema change | Bump `databaseVersion`, add an `_onUpgrade` branch, test the upgrade path | Real migration - see docs/DATABASE.md. Never "clear data": the app is published |
 
 ### File Navigation for Claude
 
@@ -844,24 +279,16 @@ Use format `file_path:line_number` in logs:
 - `database_service.dart:67` - Clickable in IDE
 - `logging_service.dart:28` - Jump to source
 
+### Naming & UI conventions
+
+- Sites in the local DB are **"Flown Sites"**; sites from the PGE API are **"New Sites"**.
+- Map filter controls (checkboxes and the like) take effect on the map immediately.
+
 ---
 
 📚 **Detailed Documentation**:
 
 - [IGC Data Trimming](docs/IGC_TRIMMING.md) - Track data processing
-- [Database Schema](docs/DATABASE.md) - Complete table definitions
+- [Database](docs/DATABASE.md) - Schema, migrations, clearing dev data
 - [Timestamp Processing](docs/TIMESTAMPS.md) - UTC/local conversion
-- at the end of complex set of changes use flutter analyze to find errors
-- use adb screenshots on emulator; on Linux desktop use `bin/dev_screenshot.sh` (see the
-  `run-app` skill - Wayland capture tools cannot work in this container)
-- Call sites in local DB "Flown Sites" and sites from PGE API "New Sites"
-- Call sites in local DB "Flown Sites" and sites from PGE API "New Sites"
-- always start the app with `bin/dev_run.sh --background`
-- **Driving the app's UI yourself is allowed** (adb since 2026-08-08, Linux desktop since
-  2026-08-10; both were previously forbidden). Navigate to the screen you need and verify
-  the change yourself rather than asking the user to tap through it — a UI fix nobody
-  looked at is unverified. `bin/dev_input.sh` on desktop, `adb shell input` on a phone.
-  See "Driving the UI" in the `run-app` skill for the commands, the coordinate rules and
-  what to check afterwards.
-- Filters in Map FIlter, e.g, checkboxes, should have immediate effect in the map
-- When proposing a solution, look for the simple, idomatic solution suitable for a mobile app
+- [Architecture](docs/TECHNICAL_DESIGN.md) | [Requirements](docs/FUNCTIONAL_SPECIFICATION.md)

@@ -1,38 +1,56 @@
 # Database Development
 
-## Pre-Release Schema Strategy
+## The app is published — schema changes need real migrations
 
-- **No Database Migrations**: Since the app is pre-release, we use a simplified approach
-- **Schema Changes**: Any database schema changes require clearing app data during development
-- **Clean v1.0**: The current schema in `database_helper.dart` represents the v1.0 release baseline
-- **Future Migrations**: Post-release migrations will start from v2 with the current schema as the baseline
+A user's flight log exists nowhere else; clearing it is unrecoverable. There is no
+"clear data and re-create" path for anyone who has installed the app.
 
-## Developer Workflow
+`database_helper.dart` is at `databaseVersion = 5`, with real `_onUpgrade` branches for
+versions 2, 3, 4 and 5. Every future schema change adds another.
 
-When pulling code changes that modify the database schema:
-1. Desktop: `bin/dev_run.sh --reset` wipes the dev database and re-seeds
-2. Android: Settings → Apps → **Paragliding App (debug)** → Storage → Clear Data.
-   Pick the "(debug)" entry - a production install may sit next to it under "The
-   Paragliding App", and clearing that one destroys real flight data
-3. Hot restart the app to recreate the database with the new schema
-4. Re-import any test data as needed
+> This file previously described a "pre-release, no migrations" strategy and told readers
+> to clear app data on a schema change. That was written before release and was wrong by
+> the time it was read — following it would destroy a user's flight log. If you find that
+> advice repeated anywhere else, it is stale.
 
-## Benefits
+## Schema change process
 
-- **Simplified codebase**: No complex migration logic during development
-- **Clean baseline**: Start v1.0 with optimized schema
-- **Fewer bugs**: No migration-related errors during development
-- **Performance**: Faster app startup without migration checks
+1. Bump `databaseVersion` in `database_helper.dart`
+2. Add an `if (oldVersion < N)` branch to `_onUpgrade`, following the existing ones
+   (see :435, :451, :463, :503 for the current four)
+3. **Log how many rows a data migration changed.** A migration that rewrites user data
+   silently cannot be audited afterwards — see `backfillDetectedDurations`
+4. Test the upgrade path, not just the fresh-install path. `test/duration_backfill_test.dart`
+   is the pattern: annotate the migration `@visibleForTesting` and drive it directly, rather
+   than duplicating its SQL in the test where the two can drift apart
+5. Verify a fresh install still works — `_onCreate` and `_onUpgrade` must converge on the
+   same schema
 
-## Database Architecture
+A good way to exercise a migration for real: copy an older `dev_data/app_documents`
+database into a worktree and launch there, then check `[DB:MIGRATE]` in the log.
+
+## Clearing data (development only)
+
+Fine on a dev machine, never appropriate as a user-facing fix.
+
+- **Linux desktop**: `bin/dev_run.sh --reset`
+- **Android**: Settings → Apps → **Paragliding App (debug)** → Storage → Clear Data.
+  Pick the "(debug)" entry — a production install may sit next to it under "The
+  Paragliding App", and clearing that one destroys real flight data.
+
+## Tables
+
+`flights`, `sites`, `wings`, `wing_aliases`, `country_codes`. Track points are not a
+table — IGC files are stored on disk and read through `FlightTrackLoader`.
+
+## Architecture
 
 - **Pattern**: MVVM with Repository pattern
 - **Database**: SQLite via sqflite (mobile) + sqflite_common_ffi (desktop)
 - **Scale**: <10 tables, largest table <5000 rows
 - **Access**: Simple StatefulWidget with direct database access
 
-## Key Services
+## Key services
 
-- `database_helper.dart` - Low-level database operations
-- `database_service.dart` - Main database service layer with business logic
-- Simple management approach - keep operations straightforward
+- `database_helper.dart` — schema, migrations, low-level operations
+- `database_service.dart` — main service layer with business logic

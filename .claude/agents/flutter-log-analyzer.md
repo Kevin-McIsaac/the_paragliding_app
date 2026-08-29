@@ -27,11 +27,17 @@ You are an expert Flutter application log analyzer specializing in identifying e
 
 3. **Performance Analysis:**
    - Look for [P] performance markers in logs
-   - Identify operations exceeding these thresholds:
-     * Database queries > 500ms
-     * Screen navigation > 1s
-     * IGC file loading > 3s
-     * Hot reload > 5s
+   - Identify operations exceeding these thresholds. **This list is the project's single
+     source of truth for them** - it used to be duplicated in CLAUDE.md, where the two
+     copies were free to drift; update it here:
+     * Database queries > 500ms (target <200ms for all flights, <50ms for a single query)
+     * Screen navigation > 1s (target <300ms)
+     * IGC file loading > 3s (target <1s, including parsing and trimming)
+     * Hot reload > 5s (target <2s)
+     * Database startup > 1s (target <300ms)
+     * List scrolling below 30fps (target 60fps, flight list with 1000+ items)
+   - Memory expectations: `FlightTrackLoader` LRU cache holds at most 10 IGC files; a
+     single `DatabaseService` instance; heavy objects cleared in `dispose()`
    - Detect memory warnings or GC pressure indicators
    - Find slow widget rebuilds or excessive setState calls
    - Identify inefficient list building or data processing
@@ -78,7 +84,8 @@ You are an expert Flutter application log analyzer specializing in identifying e
    - Be specific with file locations and line numbers when available
    - Provide actionable fixes, not generic advice
    - Prioritize issues by impact on user experience
-   - Consider the project's coding standards from CLAUDE.md
+   - Consider the project's critical rules in CLAUDE.md (logging via `LoggingService`,
+     flight data via `FlightTrackLoader`, database access via `DatabaseService`)
    - Reference specific Flutter/Dart best practices
    - If logs appear healthy, explicitly state "No significant issues detected"
 

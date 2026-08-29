@@ -223,7 +223,7 @@ Example: Loading flights
 
 ## Production Database Architecture
 
-### Advanced Database Schema (Version 10)
+### Advanced Database Schema (Version 5)
 ```sql
 -- Enhanced flights table with timezone support
 CREATE TABLE flights (
@@ -308,7 +308,7 @@ CREATE INDEX idx_wing_aliases_wing_id ON wing_aliases(wing_id);
 - **Automated Migrations**: Database version tracking with automatic upgrades
 - **Data Preservation**: Safe schema updates without data loss
 - **Performance Optimization**: Index creation during migrations
-- **Version 10 Features**: Wing aliases, enhanced statistics caching
+- **Version 5 Features**: Wing aliases, `catalog_ref` as a stable text key
 
 ## Performance Architecture
 
@@ -370,7 +370,7 @@ class PerformanceReporter {
 18. ✅ Active/retired status management
 
 #### Data Management & Performance
-19. ✅ Advanced database with version 10 schema
+19. ✅ Advanced database with version 5 schema
 20. ✅ Comprehensive caching system with statistics
 21. ✅ Performance monitoring and startup tracking
 22. ✅ Structured logging system with multiple levels
