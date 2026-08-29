@@ -9,12 +9,54 @@ description: Run and write tests for this Flutter app, and diagnose CI/analyze f
 
 ```bash
 flutter analyze                              # run after complex, multi-file changes
+flutter analyze --write=analyzer.log         # ... and save it to a file
 flutter test                                 # all tests
 flutter test test/specific_test.dart         # one file
+flutter test test/services/                  # one directory
+flutter test <file> --plain-name "group"     # one group - seconds, not ~100s
 flutter test --tags network --run-skipped    # live-API tests, skipped by default
 ```
 
 Run these from `the_paragliding_app/` (the app subdirectory), not the repo root.
+
+Iterate on a group, run the file before committing the change, run everything before
+pushing.
+
+## Finding out which test failed
+
+**Always pass `--file-reporter` on the first run, including runs you expect to pass:**
+
+```bash
+flutter test --file-reporter=json:build/test-results.json
+```
+
+Plain `flutter test` output is unusable for this in this app: `LoggingService` prints to
+stdout during tests, so thousands of `[I]`/`[D]` lines interleave with results and the
+summary shows only a running `-N` counter, never a name. Grepping is unreliable, and
+re-running "to see it again" costs ~100s for a full suite — the flag is free insurance
+against having to. `--reporter=expanded` does not solve this; app logging still
+interleaves.
+
+```python
+import json
+names = {}
+for line in open('build/test-results.json'):
+    e = json.loads(line)
+    if e.get('type') == 'testStart':
+        names[e['test']['id']] = e['test']['name']
+    if e.get('type') == 'testDone' and e.get('result') != 'success' and not e.get('hidden'):
+        print(e['result'], names.get(e['testID']))
+```
+
+The `hidden` check matters: `loading …` and `(setUpAll)` appear as tests and would
+otherwise read as failures.
+
+## Coverage
+
+```bash
+flutter test --coverage
+genhtml coverage/lcov.info -o coverage/html/
+```
 
 ## Plain `flutter test` is fine locally
 

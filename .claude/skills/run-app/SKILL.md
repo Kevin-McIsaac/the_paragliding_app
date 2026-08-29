@@ -66,16 +66,35 @@ wireless Pixel 9 looks like `adb-52110DLAQ001UT-hkZkFs._adb-tls-connect._tcp`. *
 quote it.**
 
 Other flags: `--profile` (real timings, no hot reload), `--reset` (desktop only, wipes
-`dev_data/app_documents` and re-seeds).
+`dev_data/app_documents` and re-seeds). `-d chrome` runs in a browser.
+
+### Seeding test data (desktop only)
+
+Drop real `.igc` files into `dev_data/igc/`. It is gitignored because those files carry
+**real coordinates**. They import on **first launch only** — the seeder runs when the
+flights table is empty — so relaunching keeps your data and `--reset` starts over.
+
+Seeding is driven by `--dart-define=SEED_IGC_DIR=...` and handled by
+`lib/utils/dev_seed.dart`, which **never runs in a release build**.
+
+```bash
+SEED_IGC_LIMIT=20 bin/dev_run.sh --reset   # default is 8; 0 seeds everything
+```
+
+Only the **8 most recent** files are imported, ordered by the `YYMMDD` filename prefix. A
+full archive is hundreds of files and takes minutes, so drop the whole thing in and raise
+the cap only when a task needs more.
 
 ## 3. Change code, then reload
 
 ```bash
-bin/dev_reload.sh      # hot reload
-bin/dev_reload.sh R    # hot restart - needed after main()/initState changes
+bin/dev_reload.sh      # hot reload  (SIGUSR1 via dev_data/flutter.pid)
+bin/dev_reload.sh R    # hot restart (SIGUSR2) - needed after main()/initState changes
 ```
 
-Works from anywhere, including when the app was started detached. Confirm it landed —
+Works from anywhere, including when the app was started detached — that is what the
+script is *for*. If you started it in a terminal yourself, the standard `r` / `R` keys do
+the same thing. Confirm it landed —
 `Reloaded N libraries in Xms` or `Restarted application in Xms` appears in the log. Do not
 assume; a reload that goes nowhere looks exactly like one that worked.
 
@@ -116,6 +135,43 @@ the fallback for when adb is being difficult.
 
 Still worth doing alongside: `dev_data/flutter.log`, and querying
 `dev_data/app_documents/FlightLog.db` directly.
+
+### Reading logs from a device
+
+`bin/dev_logs.sh` reads logcat over adb — the only option for a Play Store install, where
+there is no `flutter run` at all. There is no logcat on Linux desktop, so `flutter.log`
+remains the only log there, and it is also the only place build and compile errors appear.
+
+```bash
+bin/dev_logs.sh --keys       # just the [API_KEYS_STATUS] line
+bin/dev_logs.sh -g cesium    # search the whole buffer
+bin/dev_logs.sh -f           # follow live
+bin/dev_logs.sh --tee        # follow live, appending to dev_data/logcat.log
+```
+
+**The logcat ring buffer is too small to read after the fact, and it is not `adbd`'s
+fault.** The project blamed `adbd` retrying a USB bind for years; measuring it on
+2026-08-11 found the real source is `android.hardware.thermal-service.pixel`, which logs
+one `I pixel-thermal:` line per sensor per poll — 84.5 lines/s, 79% of the buffer, leaving
+**~30 seconds** of retention in the 256 KiB default. The wrong attribution sent a
+debugging session looking at USB and adb, so prefer the numbers over the story:
+
+```bash
+adb shell setprop persist.log.tag.pixel-thermal S        # survives reboot, needs no root
+adb shell setprop persist.log.tag.libPixelUsbOverheat S  # the second-largest source
+adb shell logcat -G 4M     # re-apply each boot - persist.logd.size is refused without root
+```
+
+Measured after: **9.5 lines/s and ~65 min** of retention. `trusty` looks like the biggest
+flooder in a plain `logcat -d` histogram and is a red herring — it is in the **kernel**
+buffer, a separate 256 KiB ring that costs the app's log nothing.
+
+Even 65 minutes is still a ring, so for anything you intend to read later use
+`bin/dev_logs.sh --tee`: it copies the filtered stream to a host file where nothing ages
+out. It appends and brackets each run with a marker, for the same reason `flutter.log` has
+an exit marker — a capture that died with the adb connection must not read as an app with
+nothing to say. The phone also dozes when idle, which kills `flutter run` (and with it
+`dev_input.sh`, though not the app); Developer options → **"Stay awake"** avoids it.
 
 To be told about problems as they happen instead of grepping after the fact, watch the
 log with the `Monitor` tool rather than polling it:
