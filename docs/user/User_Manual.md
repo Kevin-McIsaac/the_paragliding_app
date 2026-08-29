@@ -1,5 +1,16 @@
 # The Paragliding App User Manual
 
+<!--
+  THIS FILE IS THE SOURCE. Users read it inside the app, via
+  the_paragliding_app/assets/documentation/user_manual.md, which is a copy.
+
+  Edit here, then run:  bin/sync_user_manual.sh
+  CI fails if the two differ (see .github/workflows/ci.yml).
+
+  Do not edit the copy under assets/ - it is overwritten. Flutter cannot bundle
+  an asset from outside its package directory, which is why a copy exists at all.
+-->
+
 ## Getting Started (5 minutes)
 
 ### What You'll Learn
@@ -19,18 +30,18 @@ Import your first flight and understand the main screen in under 5 minutes.
 
 ### Understanding the App Navigation
 
-The app has four main sections accessible via the **bottom navigation bar**:
+The app has four main sections accessible via the **bottom navigation bar**, left to right:
 
-1. **Flight Log** - Your complete flight history and logbook
-2. **Nearby Sites** - Interactive map showing flying sites, airspace, and weather
-3. **Forecast** - Multi-site weather forecast comparison
+1. **Sites** - Interactive map showing flying sites, airspace, and weather
+2. **Forecast** - Multi-site weather forecast comparison
+3. **Log Book** - Your complete flight history and logbook
 4. **Statistics** - Flight summaries by year, wing, and site
 
 The app remembers which tab you last viewed and returns to it when you reopen the app.
 
-### Understanding the Flight Log Screen
+### Understanding the Log Book Screen
 
-The Flight Log screen shows all your flights with:
+The Log Book screen shows all your flights with:
 
 - **Menu button** (⋮) in top-right provides access to all the app features
 - **Total flights** and **flight hours** displayed at the top of the list
@@ -98,7 +109,7 @@ If you don't have an IGC file (e.g., forgot your vario, battery died, or recreat
 
 #### Steps
 
-1. Tap the **floating (+) button** at the bottom-right of the Flight Log screen
+1. Tap the **floating (+) button** at the bottom-right of the Log Book screen
 2. Or tap **menu (⋮)** → **Add Flight**
 3. Fill in the flight details form:
    - **Date** (required) - Tap to open date picker
@@ -217,7 +228,7 @@ If you need to correct flight information (wrong date, site, wing, etc.), you ca
 
 #### Steps
 
-1. Tap the **flight** in your Flight Log to open Flight Details
+1. Tap the **flight** in your Log Book to open Flight Details
 2. Tap the **Edit** button (usually in top-right or as a menu option)
 3. The Edit Flight screen opens with a form showing current flight data
 4. Modify any field:
@@ -525,7 +536,7 @@ Access comprehensive statistics about your flying including yearly totals, wing 
 
 1. Tap **menu (⋮)** → **Statistics**
 2. Or tap the **Statistics tab** in the bottom navigation bar
-3. Select a **date range filter** at the top (same options as Flight Log):
+3. Select a **date range filter** at the top (same options as the Log Book):
    - All Time / This Year / Last 12 Months / Last 6 Months / Last 3 Months / Last 30 Days / Custom Range
 4. Review the three main sections:
    - **Flights by Year**: Annual flight counts and total hours
@@ -550,7 +561,7 @@ Access comprehensive information about a specific flight including statistics, t
 
 #### Opening Flight Details
 
-1. Tap any **flight row** in the Flight Log screen
+1. Tap any **flight row** in the Log Book screen
 2. The Flight Detail screen opens showing multiple information sections
 3. Scroll to explore different sections (each can be expanded/collapsed)
 
@@ -1228,14 +1239,14 @@ To view app version, build information, and credits:
 
 ### Navigation
 
-- **Bottom Navigation Bar**: Four main tabs (Flight Log, Nearby Sites, Forecast, Statistics)
-- **Main Menu**: Tap menu button (⋮) in top-right of Flight Log screen
+- **Bottom Navigation Bar**: Four main tabs (Sites, Forecast, Log Book, Statistics)
+- **Main Menu**: Tap menu button (⋮) in top-right of Log Book screen
 - **Flight Details**: Tap any flight in the main list
 - **Site Details**: Tap site markers on map or site names in lists
 - **Edit Mode**: Look for underlined, clickable text
 - **Selection Mode**: Long press items to enter bulk selection
 - **Back Navigation**: Use device back button or arrow in top-left
-- **Manual Entry**: Tap floating (+) button on Flight Log screen
+- **Manual Entry**: Tap floating (+) button on Log Book screen
 - **Map Filters**: Tap filter icon (funnel) on Nearby Sites screen
 - **Map Settings**: Tap map settings icon (layers) on Nearby Sites screen
 

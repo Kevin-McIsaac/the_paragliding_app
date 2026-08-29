@@ -47,6 +47,14 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Check the shipped user manual matches its source
+        # docs/user/User_Manual.md is the source; the copy under
+        # assets/documentation/ is what users read in the app. Nothing kept them
+        # in step before this check, and they drifted 256 lines apart - with the
+        # stale one being the copy that shipped. Run bin/sync_user_manual.sh.
+        working-directory: .
+        run: bin/sync_user_manual.sh --check
+
       - name: Analyze
         run: flutter analyze
 
