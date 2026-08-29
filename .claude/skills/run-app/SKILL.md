@@ -258,9 +258,20 @@ flutter devices                               # confirm, then use the id with -d
 The pairing port and the connect port are different — mixing them up is the usual failure.
 Pairing is permanent; re-run only `adb connect` in later sessions. A stale pairing dialog
 leaves its port listening but dead, which surfaces as `error: protocol fault (couldn't read
-status message)` — reopen the dialog for a fresh port and code. `adb mdns services` returns
-nothing from a Crostini container (multicast does not cross the NAT), so always use an
-explicit `IP:port`.
+status message)` — reopen the dialog for a fresh port and code.
+
+**`adb mdns services` works from a Crostini container** and is the fastest way to find the
+phone after DHCP moves it — it reports the live `IP:port` for both services directly,
+rather than reading a possibly-stale IP off the phone's dialog:
+
+```bash
+adb mdns services | awk '/_adb-tls-connect/{print $NF}'   # connect port
+adb mdns services | awk '/_adb-tls-pairing/{print $NF}'   # pairing port - only while the dialog is open
+```
+
+An earlier version of this note claimed it "always returns empty" on the theory that
+multicast doesn't cross the Crostini NAT — that was wrong, verified 2026-08-11, and cost
+real debugging time before someone just tried it.
 
 ### Run `adb devices -l` before connecting anything
 

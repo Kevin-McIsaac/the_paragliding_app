@@ -11,8 +11,9 @@ Aviation data overlays: airspaces, airports, navigation aids, reporting points.
 
 **Airspace overlays do not use the API and need no API key.** They are bulk-downloaded
 per country from OpenAIP's public daily export bucket by `AirspaceCountryService`,
-stored in the local database, and read back by bounding box. That is what makes airspace
-work offline, which matters because launch sites usually have no signal.
+stored in the local database, and read back by bounding box. That keeps it to one
+request per country instead of one per viewport - see the rate-limit note below - and
+means it doesn't depend on a third-party API being up at read time.
 
 ```
 https://storage.openaip.net/openaip-system-exports/<cc>_asp.geojson   # e.g. au_asp.geojson
