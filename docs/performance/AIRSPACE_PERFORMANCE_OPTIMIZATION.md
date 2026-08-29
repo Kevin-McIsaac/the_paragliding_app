@@ -17,18 +17,29 @@ This document tracks the performance optimization journey of the airspace render
 
 ### Completed Optimizations
 
+> **Code locations are symbol names, not line numbers.** They were line ranges until
+> 2026-08-29, by which point every one of them was wrong — four pointed past the end of a
+> file that had since shrunk to 1234 lines, and the two that were still in range named
+> unrelated code. Cite something greppable.
+
 | Stage | Optimization | Implementation Details | Performance Impact | Code Location |
 |-------|-------------|------------------------|-------------------|---------------|
-| **1. SQL Filtering** | Move filtering to database | Filter by type, class, altitude, and viewport in SQL query instead of post-processing | Reduces data loaded by ~70-90% | `airspace_geojson_service.dart:445-450` |
-| **2. Pre-computed Altitudes** | Store altitude in feet | Added `lower_altitude_ft INTEGER` column to avoid runtime conversion | Eliminates ~1ms per 100 airspaces | `airspace_disk_cache.dart:107-108` |
-| **3. Viewport Culling** | SQL spatial indices | Compound index `idx_geometry_spatial` for bounding box queries | Fast spatial queries (~5ms for 1000s) | `airspace_disk_cache.dart:185-189` |
-| **4. Direct Pipeline** | Skip GeoJSON parsing | Load from cache directly without intermediate JSON | Saves ~20-30ms per load | `_loadAirspacePolygonsFromCacheDirect()` |
-| **5. Altitude Sorting** | Pre-sort for clipping | Sort airspaces by altitude once for optimal clipping order | Enables early exit optimization | `airspace_geojson_service.dart:1473-1479` |
-| **6. Early Exit** | Stop at higher altitudes | Break loop when lower altitude ≥ current altitude | Reduces comparisons by ~40-60% | `airspace_geojson_service.dart:1538-1545` |
-| **7. Bounds Pre-check** | Inline bbox check | Direct coordinate comparison before polygon operations | Skips ~50-70% of polygon ops | `airspace_geojson_service.dart:1550-1557` |
-| **8. Altitude Array** | Cache-friendly layout | Pre-extract altitudes into contiguous `Int32List` | Better CPU cache locality | `airspace_geojson_service.dart:1486-1490` |
-| **9. Binary Storage** | Compressed coordinates | Float32 binary arrays with GZIP compression | 75% storage reduction vs JSON | `airspace_disk_cache.dart:227-287` |
-| **10. Int32 Coordinates** | Direct Clipper2 pipeline | Int32 storage with zero-copy ClipperData | 25-40% faster clipping, 85% memory reduction | Multiple files (see below) |
+| **1. SQL Filtering** | Move filtering to database | Filter by type, class, altitude, and bounds in the SQL query instead of post-processing | Reduces data loaded by ~70-90% | `AirspaceDiskCache.getGeometriesInBounds()` |
+| **2. Pre-computed Altitudes** | Store altitude in feet | `lower_altitude_ft INTEGER` column avoids runtime conversion | Eliminates ~1ms per 100 airspaces | `airspace_disk_cache.dart`, geometry table schema |
+| **3. Viewport Culling** | SQL spatial indices | Compound index `idx_geometry_spatial` over the four bounds columns | Fast spatial queries (~5ms for 1000s) | `idx_geometry_spatial` in `_onCreate` |
+| **4. Direct Pipeline** | Skip GeoJSON parsing | Build Clipper data straight from database BLOBs, no intermediate JSON or `LatLng` | Saves ~20-30ms per load | `AirspaceDiskCache._createClipperData()` |
+| **5. Altitude Sorting** | Pre-sort for clipping | Sort airspaces by altitude once for optimal clipping order | Enables early exit optimization | `_applyPolygonClippingOptimized()` |
+| **6. Early Exit** | Stop at higher altitudes | Break loop when lower altitude ≥ current altitude | Reduces comparisons by ~40-60% | `_applyPolygonClippingOptimized()` |
+| **7. Bounds Pre-check** | Inline bbox check | Direct coordinate comparison before polygon operations | Skips ~50-70% of polygon ops | `_applyPolygonClippingOptimized()` |
+| **8. Altitude Array** | Cache-friendly layout | Altitudes pre-extracted into a contiguous `Int32List` | Better CPU cache locality | `ClippingBatch.altitudes` |
+| **9. Binary Storage** | Compressed coordinates | *Superseded by #10 — see note below.* | — | — |
+| **10. Int32 Coordinates** | Direct Clipper2 pipeline | Int32 BLOBs (scaled by 10^7) with zero-copy `Int32List.view` into the Clipper data | 25-40% faster clipping, 85% memory reduction | `coordinates_binary` / `polygon_offsets` columns, `_createClipperData()` |
+
+> **#9 no longer describes the code.** It recorded Float32 binary arrays with GZIP
+> compression; #10 replaced that with uncompressed Int32 BLOBs, which is what the cache
+> stores today (`coordinates_binary BLOB -- Int32 array (scaled by 10^7)`). There is no
+> gzip in the disk cache. Both were listed as "completed" side by side, which reads as
+> the two being layered rather than one having replaced the other.
 
 ---
 
@@ -278,7 +289,14 @@ grep "AIRSPACE_CLIPPING" dev_data/flutter.log
 - Added grid-based pre-filtering proposal
 - Updated covering index recommendations
 
+### 2026-08-29
+- Audited against the code. Replaced all `file.dart:line` citations with symbol names:
+  every one was wrong, four pointing past the end of a file that had shrunk to 1234 lines,
+  and the two still in range naming unrelated code
+- Marked optimization #9 (Float32 + GZIP) as superseded by #10 (Int32 BLOBs), which is
+  what the cache actually stores
+
 ---
 
-*Last Updated: 2025-01-12*
+*Last Updated: 2026-08-29*
 *Next Review: After covering index implementation*
