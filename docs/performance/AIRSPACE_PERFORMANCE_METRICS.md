@@ -1,10 +1,19 @@
 # Airspace Performance Metrics & Benchmarks
 
+> **These are point-in-time measurements, not current numbers.** They were taken on or
+> before 2025-11-12 (the last commit to touch this file) and nothing has re-run them
+> since. Flutter has moved from roughly 3.32 to 3.41.6 in that time, and the airspace
+> pipeline itself changed — the coordinate storage described in the optimization doc was
+> replaced. Treat the figures as a record of what the pipeline achieved once, and the
+> ratios between scenarios as more durable than the absolute milliseconds. Re-measure
+> before citing any of it as the app's present performance.
+
 ## Real-World Test Scenarios
 
 ### Test Environment
 - **Device**: Chromebox Reference Emulator
-- **Flutter Version**: Stable channel
+- **Flutter Version**: stable channel, version not recorded — which is why these numbers
+  cannot be compared against a later run. Record the exact version next time.
 - **Database**: SQLite with spatial indices
 - **Clipping Library**: Clipper2 (Dart bindings)
 
@@ -350,6 +359,6 @@ The airspace pipeline performance has been significantly improved through:
 
 ---
 
-*Last Updated: 2025-01-12*
+*Measured: on or before 2025-11-12; not re-run since*
 *Test Environment: Chromebox Reference Emulator*
 *Test Data: Australia (1819), France (1631), Combined (3450) airspaces*

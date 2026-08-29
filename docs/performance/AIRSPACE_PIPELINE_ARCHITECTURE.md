@@ -267,13 +267,25 @@ Query + Clip + Render = 92ms + 1500ms + 51ms = 1643ms
 
 ## Code Locations
 
+Symbol names rather than line numbers — the line numbers here were all stale, two of them
+pointing past the end of a file that has since shrunk.
+
 - **Main service**: `lib/services/airspace_geojson_service.dart`
 - **Cache layer**: `lib/services/airspace_disk_cache.dart`
-- **Clipping logic**: `_applyPolygonClipping()` at line 1429
-- **Direct pipeline**: `_loadAirspacePolygonsFromCacheDirect()` at line 1736
-- **ClipperData class**: `lib/data/models/clipper_data.dart`
+- **Country downloads**: `lib/services/airspace_country_service.dart`
+- **Clipping logic**: `_applyPolygonClippingOptimized()` in the main service
+- **Direct pipeline**: `AirspaceDiskCache._createClipperData()`, which builds Clipper data
+  straight from the database BLOBs
+- **ClipperData class**: declared in `airspace_geojson_service.dart` — *not* in
+  `lib/data/models/`, where this document used to point
+
+> The non-optimized `_applyPolygonClipping()` and
+> `_loadAirspacePolygonsFromCacheDirect()` named by earlier revisions no longer exist. The
+> former was deliberately deleted — the source now carries `// REMOVED: Non-optimized
+> _applyPolygonClipping - always use optimized ClipperData path` — so the optimized path
+> is the only path, not one of two.
 
 ---
 
-*Last Updated: 2025-01-12*
+*Last Updated: 2026-08-29*
 *Architecture: Int32 binary storage with direct Clipper2 pipeline*
