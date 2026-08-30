@@ -150,6 +150,20 @@ class FfvlWeatherProvider implements WeatherStationProvider {
   }
 
   @override
+  Future<void> warmCache() async {
+    // Fully fresh cache - nothing to warm
+    if (_globalCache != null &&
+        !_globalCache!.beaconListExpired &&
+        !_globalCache!.measurementsExpired) {
+      return;
+    }
+    // A world bbox goes through the normal fetch/refresh path: it overlaps
+    // any cached area, so a valid beacon list only refreshes measurements
+    // and an empty cache does the full global fetch.
+    await fetchStations(LatLngBounds(LatLng(-90, -180), LatLng(90, 180)));
+  }
+
+  @override
   Future<Map<String, WindData>> fetchWeatherData(
     List<WeatherStation> stations,
   ) async {

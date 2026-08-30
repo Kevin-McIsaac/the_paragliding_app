@@ -50,6 +50,11 @@ abstract class WeatherStationProvider {
   /// For example, checks if required API key is present
   Future<bool> isConfigured();
 
+  /// Warm this provider's cache ahead of first use (e.g. at app startup).
+  /// Default: no-op - providers with a fetch-all-global strategy override
+  /// this so their slow global fetch happens before any screen needs it.
+  Future<void> warmCache() async {}
+
   /// Clear any cached data for this provider
   void clearCache();
 

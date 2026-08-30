@@ -676,7 +676,13 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
               // Cumulative update: Replace all stations with deduplicated cumulative list
               // This creates progressive appearance as cumulative list grows with each provider
               if (stations.isNotEmpty) {
-                final weatherData = await _weatherStationService.getWeatherForStations(stations);
+                // Providers like AWC/METAR/Pioupiou/FFVL embed wind data in the
+                // station itself - only round-trip through the service when
+                // something actually needs fetching
+                final needsFetch = stations.any((s) => s.windData == null);
+                final weatherData = needsFetch
+                    ? await _weatherStationService.getWeatherForStations(stations)
+                    : {for (final s in stations) if (s.windData != null) s.key: s.windData!};
 
                 if (mounted) {
                   setState(() {
@@ -685,11 +691,10 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                     _stationWindData.addAll(weatherData);
                   });
 
-                  LoggingService.structured('STATION_PROGRESSIVE_UPDATE', {
-                    'provider': source.name,
-                    'station_count': stations.length,
-                    'stations_with_data': weatherData.length,
-                  });
+                  // Debug: fires once per provider, on top of the final
+                  // STATION_FETCH_SUCCESS - not worth an info line each time
+                  LoggingService.debug('STATION_PROGRESSIVE_UPDATE ${source.name}: '
+                      '${stations.length} stations, ${weatherData.length} with data');
                 }
               }
             }
