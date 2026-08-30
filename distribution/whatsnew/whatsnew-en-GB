@@ -1,8 +1,4 @@
-• Landing areas now show as landings for everyone. If you upgraded and they
-  still looked like launches, this puts it right on its own - no need to
-  reset anything
-• Favourite a landing and it now appears in your favourites, tucked under
-  the launch it serves
-• Searching by name finds landing areas, not just launches
-• A landing's page is headed with a windsock, where a launch shows its wind
-  directions
+• Wind forecasts for your sites load noticeably faster - requests now run in
+  parallel and caches are warmed as the app starts, so wind is ready when you
+  open a site instead of arriving after it
+• Fixed the splash screen overflowing on the very first frame on desktop
