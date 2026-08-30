@@ -676,9 +676,10 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
               // Cumulative update: Replace all stations with deduplicated cumulative list
               // This creates progressive appearance as cumulative list grows with each provider
               if (stations.isNotEmpty) {
-                // Providers like AWC/METAR/Pioupiou/FFVL embed wind data in the
-                // station itself - only round-trip through the service when
-                // something actually needs fetching
+                // Four of five providers embed wind data in the station itself
+                // and their fetchWeatherData is just a local map - only go
+                // through the service (a real network path for NWS) when some
+                // station lacks embedded data
                 final needsFetch = stations.any((s) => s.windData == null);
                 final weatherData = needsFetch
                     ? await _weatherStationService.getWeatherForStations(stations)
