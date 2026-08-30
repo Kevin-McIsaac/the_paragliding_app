@@ -104,6 +104,13 @@ detaches**, so the marker means the log stopped, not the app.
 For device logs (`bin/dev_logs.sh`, logcat ring-buffer tuning) see the `run-app` skill, and
 for analysing a log against the performance thresholds use the `flutter-log-analyzer` agent.
 
+**Agent definitions in `.claude/agents/` are not auto-loaded in DSH.** To use
+`flutter-log-analyzer`, read `.claude/agents/flutter-log-analyzer.md` and either follow it
+inline (fine for small logs) or pass its content to a subagent (better when the log is
+large and you don't want it eating this session's context). The same applies to the
+`.claude/skills/` files: DSH does not register them as skills, so `read` them by path
+when their topic comes up.
+
 ### Claude-Specific Patterns
 
 ```dart

@@ -5,6 +5,24 @@ description: Configure this project's requirements into a developer's personal C
 
 # This project's Bash-sandbox requirements
 
+> **Agent environment matters.** Everything below was written for **Claude Code's** Bash
+> sandbox, which has `excludedCommands`, `filesystem.allowWrite`, and a network
+> allowlist. **Under DSH (DeepSeek Harness) none of those knobs exist** — its bwrap
+> profile is fixed (read-only host root, writable workspace, ephemeral `/tmp`, private
+> PID namespace, network unrestricted). Verified 2026-08-30 on this machine:
+>
+> - The **X11 socket is hidden** (`/tmp/.X11-unix` vanishes under the sandbox's tmpfs
+>   overlay), but the **Wayland socket is not** — `/run/user/1000/wayland-0` connects
+>   from inside. The "no display at all" framing is stale.
+> - The first blocker for Flutter is not the display at all: `~/flutter` sits outside the
+>   workspace, so a sandboxed `flutter` dies at
+>   `bin/cache/engine.stamp: Read-only file system` before any GTK code runs.
+> - The idiomatic DSH fix is the **per-command escalation flow**: a denied command is
+>   retried once with `sandbox_permissions` (narrowest wider mode that suffices — usually
+>   `danger-full-access`) plus a one-sentence justification, which raises an approval
+>   prompt. Do not set `danger-full-access` as the default mode; it is unconfined, not a
+>   wider profile. The Claude Code settings below are kept for reference on that host.
+
 Claude Code's Bash sandbox is set up per-developer in `~/.claude/settings.json`, so
 nothing in this repo turns it on and none of this shows up in a diff. If yours is
 enabled, three things about *this* project need configuration that is not obvious. Each
