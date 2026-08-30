@@ -682,7 +682,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                 final needsFetch = stations.any((s) => s.windData == null);
                 final weatherData = needsFetch
                     ? await _weatherStationService.getWeatherForStations(stations)
-                    : {for (final s in stations) if (s.windData != null) s.key: s.windData!};
+                    : {for (final s in stations) s.key: s.windData!};
 
                 if (mounted) {
                   setState(() {

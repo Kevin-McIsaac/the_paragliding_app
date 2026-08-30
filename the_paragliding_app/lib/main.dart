@@ -15,6 +15,7 @@ import 'services/api_keys.dart';
 import 'services/app_initialization_service.dart';
 import 'services/performance_metrics_service.dart';
 import 'services/weather_providers/weather_station_provider_registry.dart';
+import 'services/weather_station_service.dart';
 
 void main() async {
   // Ensure Flutter is initialized
@@ -191,9 +192,16 @@ class _AppInitializerState extends State<AppInitializer> {
   }
 
   Future<void> _warmWeatherCaches() async {
+    // Same gate as WeatherStationService._getEnabledProviders: skip providers
+    // that are unconfigured (e.g. missing FFVL key) or disabled in settings -
+    // a warm-up must not override either.
     await Future.wait(WeatherStationProviderRegistry.getAllProviders()
         .map((provider) async {
       try {
+        if (!await provider.isConfigured()) return;
+        if (!await WeatherStationService.isProviderEnabled(provider.source)) {
+          return;
+        }
         await provider.warmCache();
       } catch (e, stackTrace) {
         LoggingService.error(
