@@ -440,12 +440,15 @@ class WeatherService {
     if (locations.length > maxBatchSize) {
       LoggingService.info('Batch size ${locations.length} exceeds max $maxBatchSize, splitting into chunks');
 
-      // Split into chunks and process them
-      final results = <String, WindData>{};
+      // Split into chunks and fetch them in parallel
+      final chunkFutures = <Future<Map<String, WindData>>>[];
       for (int i = 0; i < locations.length; i += maxBatchSize) {
         final end = (i + maxBatchSize < locations.length) ? i + maxBatchSize : locations.length;
         final chunk = locations.sublist(i, end);
-        final chunkResults = await getWindDataBatch(chunk, dateTime, onApiCallStart: onApiCallStart);
+        chunkFutures.add(getWindDataBatch(chunk, dateTime, onApiCallStart: onApiCallStart));
+      }
+      final results = <String, WindData>{};
+      for (final chunkResults in await Future.wait(chunkFutures)) {
         results.addAll(chunkResults);
       }
       return results;

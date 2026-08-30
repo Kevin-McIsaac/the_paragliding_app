@@ -159,6 +159,9 @@ class NwsWeatherProvider implements WeatherStationProvider {
   }
 
   @override
+  Future<void> warmCache() async {} // Bounds-scoped fetch - nothing global to warm
+
+  @override
   Future<Map<String, WindData>> fetchWeatherData(
     List<WeatherStation> stations,
   ) async {

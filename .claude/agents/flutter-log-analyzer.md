@@ -1,7 +1,6 @@
 ---
 name: flutter-log-analyzer
 description: Use this agent when you need to review Flutter application logs written by bin/dev_run.sh to dev_data/flutter.log. The agent will examine log output and provide actionable insights. Examples: <example>Context: The user wants to check application logs for issues after making code changes.\nuser: "Check the logs "\nassistant: "I'll use the Bash tool to launch the flutter-log-analyzer agent to examine the logs for errors and performance issues"\n<commentary>Since the user wants to analyze Flutter logs, use the Bash tool to launch the flutter-log-analyzer agent.</commentary></example> <example>Context: The user has been testing the app and wants to know if there are any issues.\nuser: "Are there any errors in the recent app logs?"\nassistant: "Let me use the flutter-log-analyzer agent to check for errors and issues in the logs"\n<commentary>The user is asking about log errors, so use the flutter-log-analyzer agent to analyze the logs.</commentary></example> <example>Context: After a hot reload, the user wants to ensure no performance problems were introduced.\nuser: "Review the logs after that last change"\nassistant: "I'll launch the flutter-log-analyzer agent to review the logs and identify any issues from the recent changes"\n<commentary>Since the user wants log analysis after changes, use the flutter-log-analyzer agent.</commentary></example>
-model: sonnet
 color: cyan
 ---
 
