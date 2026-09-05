@@ -274,7 +274,30 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
   }
 
   @override
+  /// Drop readings, keep discovery. Called by the service's clearCache()
+  /// (refresh-all, filter changes): station positions are world knowledge
+  /// that cost probes to rebuild, so they survive; wind readings re-fetch on
+  /// the next background pass via the TTL check anyway. A user "refresh"
+  /// must not empty the map or re-spend the rate limit re-discovering.
+  ///
+  /// Tests use [clearCache] below to reset the provider fully.
+  @override
   void clearCache() {
+    for (final station in discovered.values) {
+      station.windData = null;
+      station.readingFetchedAt = null;
+      station.noData = false;
+    }
+    _measurementsTimestamp = null;
+    LoggingService.structured('WU_PWS_READINGS_CLEARED', {
+      'stations': discovered.length,
+    });
+  }
+
+  /// Full reset - discovery map AND persisted cache. Test-only seam;
+  /// production code goes through [clearCache], which preserves discovery.
+  @visibleForTesting
+  void clearCacheForTest() {
     discovered.clear();
     _measurementsTimestamp = null;
     _lastProbePoint = null;

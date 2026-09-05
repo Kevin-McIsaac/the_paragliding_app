@@ -54,7 +54,7 @@ void main() {
   group('viewport coverage (centre probe)', () {
     test('unknown viewport is not covered when cache is empty', () {
       final provider = WeatherUndergroundPwsProvider.instance;
-      provider.clearCache();
+      provider.clearCacheForTest();
 
       final bounds = LatLngBounds(LatLng(-32.0, 116.5), LatLng(-31.7, 117.0));
       expect(provider.viewportCoveredForTest(bounds), isFalse);
@@ -62,7 +62,7 @@ void main() {
 
     test('covered when a fresh station sits near the centre', () {
       final provider = WeatherUndergroundPwsProvider.instance;
-      provider.clearCache();
+      provider.clearCacheForTest();
 
       provider.discovered['ISTA1'] = DiscoveredPwsStation(
         id: 'ISTA1',
@@ -83,7 +83,7 @@ void main() {
 
     test('covered after a recent probe near the centre (pan within area)', () {
       final provider = WeatherUndergroundPwsProvider.instance;
-      provider.clearCache();
+      provider.clearCacheForTest();
       provider.lastProbePointForTest =
           LatLng(-31.85, 116.76); // ~1km from the bounds centre
 
@@ -93,7 +93,7 @@ void main() {
 
     test('stale stations do not count as coverage', () {
       final provider = WeatherUndergroundPwsProvider.instance;
-      provider.clearCache();
+      provider.clearCacheForTest();
 
       // Stale: last updated 3 hours ago.
       provider.discovered['ISTALE'] = DiscoveredPwsStation(
@@ -209,7 +209,7 @@ void main() {
   group('in-bounds conversion', () {
     test('converts discovered stations with dashboard URL and QC label', () {
       final provider = WeatherUndergroundPwsProvider.instance;
-      provider.clearCache();
+      provider.clearCacheForTest();
 
       provider.discovered['IBURGE35'] = DiscoveredPwsStation(
         id: 'IBURGE35',
@@ -245,7 +245,7 @@ void main() {
 
     test('marks stations confirmed to report no wind data', () {
       final provider = WeatherUndergroundPwsProvider.instance;
-      provider.clearCache();
+      provider.clearCacheForTest();
 
       final station = DiscoveredPwsStation(
         id: 'ISILENT',
@@ -271,7 +271,7 @@ void main() {
 
     test('drops stale stations from the map layer', () {
       final provider = WeatherUndergroundPwsProvider.instance;
-      provider.clearCache();
+      provider.clearCacheForTest();
 
       provider.discovered['IDEAD'] = DiscoveredPwsStation(
         id: 'IDEAD',
@@ -306,7 +306,7 @@ void main() {
 
     test('filters to bounds', () {
       final provider = WeatherUndergroundPwsProvider.instance;
-      provider.clearCache();
+      provider.clearCacheForTest();
 
       provider.discovered['IIN'] = DiscoveredPwsStation(
         id: 'IIN',
