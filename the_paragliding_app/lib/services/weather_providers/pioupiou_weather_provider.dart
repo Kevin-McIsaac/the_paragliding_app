@@ -64,6 +64,7 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
   Future<List<WeatherStation>> fetchStations(
     LatLngBounds bounds, {
     Function()? onApiCallStart,
+    void Function(List<WeatherStation>)? onStationsUpdated,
   }) async {
     try {
       // Early exit: Check if cached bbox overlaps with requested bounds

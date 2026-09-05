@@ -51,71 +51,44 @@ void main() {
     });
   });
 
-  group('gap probing', () {
-    test('probes everything when cache is empty', () {
+  group('viewport coverage (centre probe)', () {
+    test('unknown viewport is not covered when cache is empty', () {
       final provider = WeatherUndergroundPwsProvider.instance;
       provider.clearCache();
 
       final bounds = LatLngBounds(LatLng(-32.0, 116.5), LatLng(-31.7, 117.0));
-      final probes = provider.uncoveredProbePoints(bounds);
-
-      expect(probes, isNotEmpty);
-      // Every probe must lie inside the requested bounds.
-      for (final p in probes) {
-        expect(p.latitude, inInclusiveRange(bounds.south, bounds.north));
-        expect(p.longitude, inInclusiveRange(bounds.west, bounds.east));
-      }
+      expect(provider.viewportCoveredForTest(bounds), isFalse);
     });
 
-    test('zero probes when the viewport is fully covered', () {
+    test('covered when a fresh station sits near the centre', () {
       final provider = WeatherUndergroundPwsProvider.instance;
       provider.clearCache();
 
-      final now = DateTime.now().toUtc();
-      // Two fresh stations far enough apart to cover a wide viewport, with a
-      // non-zero coverage radius from their probe points.
       provider.discovered['ISTA1'] = DiscoveredPwsStation(
         id: 'ISTA1',
         name: 'Station One',
         latitude: -31.85,
-        longitude: 116.70,
+        longitude: 116.75,
         distanceKm: 5,
         qcStatus: 1,
-        updateTimeUtc: now.subtract(const Duration(minutes: 5)),
-        coverageRadiusKm: 8,
-      );
-      provider.discovered['ISTA2'] = DiscoveredPwsStation(
-        id: 'ISTA2',
-        name: 'Station Two',
-        latitude: -31.85,
-        longitude: 117.30,
-        distanceKm: 5,
-        qcStatus: 1,
-        updateTimeUtc: now.subtract(const Duration(minutes: 5)),
+        updateTimeUtc: DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
         coverageRadiusKm: 8,
       );
 
-      final bounds = LatLngBounds(LatLng(-31.95, 116.60), LatLng(-31.75, 117.40));
-      final probes = provider.uncoveredProbePoints(bounds);
+      // Centre of these bounds is (-31.85, 116.75) - within the coverage
+      // radius of ISTA1.
+      final bounds = LatLngBounds(LatLng(-31.9, 116.70), LatLng(-31.8, 116.80));
+      expect(provider.viewportCoveredForTest(bounds), isTrue);
+    });
 
-      // The grid extends past the covered discs' edges (bounds > coverage),
-      // but all points inside the discs are covered. A viewport of this size
-      // (~87 km wide) still has uncovered corners - assert we never need more
-      // probes than the cap and that stations in the centre of coverage are
-      // not re-probed.
-      expect(probes.length, lessThanOrEqualTo(12));
-      for (final p in probes) {
-        // No probe may sit on top of a known station (that would be a wasted
-        // duplicate probe).
-        expect(
-          provider.distanceKm(p.latitude, p.longitude, -31.85, 116.70),
-          greaterThanOrEqualTo(MapConstants.wuCoverageRadiusKm),
-        );
-        expect(
-          provider.distanceKm(p.latitude, p.longitude, -31.85, 117.30),
-          greaterThanOrEqualTo(MapConstants.wuCoverageRadiusKm),
-        );
-      }
+    test('covered after a recent probe near the centre (pan within area)', () {
+      final provider = WeatherUndergroundPwsProvider.instance;
+      provider.clearCache();
+      provider.lastProbePointForTest =
+          LatLng(-31.85, 116.76); // ~1km from the bounds centre
+
+      final bounds = LatLngBounds(LatLng(-31.9, 116.65), LatLng(-31.8, 116.75));
+      expect(provider.viewportCoveredForTest(bounds), isTrue);
     });
 
     test('stale stations do not count as coverage', () {
@@ -127,7 +100,7 @@ void main() {
         id: 'ISTALE',
         name: 'Dead Station',
         latitude: -31.85,
-        longitude: 116.70,
+        longitude: 116.75,
         distanceKm: 5,
         qcStatus: 1,
         updateTimeUtc: DateTime.now().toUtc().subtract(const Duration(hours: 3)),
@@ -135,9 +108,7 @@ void main() {
       );
 
       final bounds = LatLngBounds(LatLng(-31.9, 116.65), LatLng(-31.8, 116.75));
-      final probes = provider.uncoveredProbePoints(bounds);
-
-      expect(probes, isNotEmpty,
+      expect(provider.viewportCoveredForTest(bounds), isFalse,
           reason: 'a stale station must not suppress probing');
     });
   });
@@ -270,6 +241,32 @@ void main() {
       expect(stations.first.observationType, 'WU PWS (QC passed)');
       expect(stations.first.source, WeatherStationSource.weatherUndergroundPws);
       expect(stations.first.windData, isNotNull);
+    });
+
+    test('marks stations confirmed to report no wind data', () {
+      final provider = WeatherUndergroundPwsProvider.instance;
+      provider.clearCache();
+
+      final station = DiscoveredPwsStation(
+        id: 'ISILENT',
+        name: 'Silent Station',
+        latitude: -31.85,
+        longitude: 116.75,
+        distanceKm: 0.5,
+        qcStatus: 1,
+        updateTimeUtc: DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
+        coverageRadiusKm: 0.5,
+      )..noData = true;
+      provider.discovered['ISILENT'] = station;
+
+      final bounds =
+          LatLngBounds(LatLng(-31.9, 116.70), LatLng(-31.8, 116.90));
+      final stations = provider.stationsInBoundsForTest(bounds);
+
+      expect(stations, hasLength(1));
+      expect(stations.first.windData, isNull);
+      // The marker widget keys its "no data" state off this string.
+      expect(stations.first.observationType, 'WU PWS (no wind data)');
     });
 
     test('drops stale stations from the map layer', () {

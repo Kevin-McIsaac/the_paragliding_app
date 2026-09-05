@@ -98,6 +98,7 @@ class NwsWeatherProvider implements WeatherStationProvider {
   Future<List<WeatherStation>> fetchStations(
     LatLngBounds bounds, {
     Function()? onApiCallStart,
+    void Function(List<WeatherStation>)? onStationsUpdated,
   }) async {
     // Early return if outside NWS coverage area
     if (!_isBoundsInCoverageArea(bounds)) {

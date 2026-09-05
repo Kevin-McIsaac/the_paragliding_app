@@ -622,6 +622,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
             required success,
             required stationCount,
             required stations,
+            bool passComplete = false,
           }) async {
             if (mounted) {
               // Check if this provider is already in the loading set
@@ -639,8 +640,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                   _providerStates[source] = LoadingItemState.loading;
                 });
               }
-              // If already loading, this must be the completion (even with 0 stations)
-              else if (isAlreadyLoading) {
+              // Terminal event for a provider: completion of a blocking fetch
+              // or the final push of a background pass.
+              else if (isAlreadyLoading && passComplete) {
                 LoggingService.structured('PROVIDER_API_COMPLETE', {
                   'provider': displayName,
                   'success': success,

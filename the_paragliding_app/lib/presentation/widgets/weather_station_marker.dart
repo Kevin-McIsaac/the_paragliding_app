@@ -23,6 +23,17 @@ class WeatherStationMarker extends StatelessWidget {
     this.onTap,
   });
 
+  /// Marker state helpers for WU PWS stations without wind:
+  /// noData = station confirmed to report nothing usable; pending = readings
+  /// still being fetched in the background.
+  static bool _isNoDataStation(WeatherStation station) =>
+      station.source == WeatherStationSource.weatherUndergroundPws &&
+      station.observationType == 'WU PWS (no wind data)';
+
+  static bool _isPendingStation(WeatherStation station) =>
+      station.source == WeatherStationSource.weatherUndergroundPws &&
+      station.observationType != 'WU PWS (no wind data)';
+
   @override
   Widget build(BuildContext context) {
     final windData = station.windData;
@@ -37,8 +48,10 @@ class WeatherStationMarker extends StatelessWidget {
             : '';
         tooltipText = '${station.name ?? station.id}\n${windData.speedKmh.toStringAsFixed(1)}$gustsStr km/h from ${windData.directionDegrees.toStringAsFixed(0)}°';
       }
+    } else if (_isNoDataStation(station)) {
+      tooltipText = '${station.name ?? station.id}\nNo wind data (station reports none)';
     } else {
-      tooltipText = '${station.name ?? station.id}\nNo wind data';
+      tooltipText = '${station.name ?? station.id}\nWind loading…';
     }
 
     return Tooltip(
@@ -57,6 +70,8 @@ class WeatherStationMarker extends StatelessWidget {
           child: CustomPaint(
             painter: _WeatherStationPainter(
               windData: station.windData,
+              pending: windData == null && _isPendingStation(station),
+              noData: windData == null && _isNoDataStation(station),
             ),
           ),
         ),
@@ -80,8 +95,17 @@ class WeatherStationMarker extends StatelessWidget {
 class _WeatherStationPainter extends CustomPainter {
   final WindData? windData;
 
+  /// No wind yet and a background reading pass is still working.
+  final bool pending;
+
+  /// The station was checked and reports no usable wind - rendered as a
+  /// dashed, dimmed circle so it reads as "station exists, has no data".
+  final bool noData;
+
   _WeatherStationPainter({
     required this.windData,
+    this.pending = false,
+    this.noData = false,
   });
 
   @override
@@ -90,6 +114,42 @@ class _WeatherStationPainter extends CustomPainter {
 
     // Circle outline (NOAA style)
     final circleRadius = 6.0;
+
+    if (noData) {
+      // Dashed, dimmed circle: station alive but reports no wind.
+      final dashPaint = Paint()
+        ..color = Colors.grey[500]!
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+      const dashCount = 8;
+      const dashArc = 2 * math.pi / (dashCount * 2);
+      for (var i = 0; i < dashCount; i++) {
+        canvas.drawArc(
+          Rect.fromCircle(center: center, radius: circleRadius),
+          i * dashArc * 2,
+          dashArc,
+          false,
+          dashPaint,
+        );
+      }
+      // Small centre dot: "no data here".
+      canvas.drawCircle(
+        center,
+        1.5,
+        Paint()..color = Colors.grey[500]!,
+      );
+      return;
+    }
+
+    if (pending) {
+      // Lighter, thinner ring: wind still loading.
+      final pendingPaint = Paint()
+        ..color = Colors.grey[400]!
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5;
+      canvas.drawCircle(center, circleRadius, pendingPaint);
+      return;
+    }
 
     // Draw circle outline only (no fill)
     final circlePaint = Paint()
@@ -182,7 +242,9 @@ class _WeatherStationPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_WeatherStationPainter oldDelegate) {
-    return oldDelegate.windData != windData;
+    return oldDelegate.windData != windData ||
+        oldDelegate.pending != pending ||
+        oldDelegate.noData != noData;
   }
 }
 
