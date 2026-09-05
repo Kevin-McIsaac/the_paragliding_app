@@ -1,0 +1,54 @@
+name: AI Code Review
+
+# Automated PR review using the GLM Coding Plan (Z.ai) through
+# anthropics/claude-code-action. The action wraps the Claude Code CLI, but
+# with ANTHROPIC_BASE_URL pointed at Z.ai's Anthropic-compatible endpoint
+# every model call goes to GLM - no Claude account involved.
+#
+# Requires the ZHIPU_API_KEY repo secret (Settings -> Secrets and variables
+# -> Actions). Model pinned to glm-5.3-flash to match local usage.
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Run GLM Code Review
+        id: ai-review
+        uses: anthropics/claude-code-action@v1
+        env:
+          # Route the CLI's Anthropic-protocol calls at Z.ai.
+          ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
+          ANTHROPIC_MODEL: glm-5.3-flash
+          ANTHROPIC_DEFAULT_SONNET_MODEL: glm-5.3-flash
+          ANTHROPIC_DEFAULT_OPUS_MODEL: glm-5.3-flash
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: glm-5.3-flash
+        with:
+          anthropic_api_key: ${{ secrets.ZHIPU_API_KEY }}
+          prompt: |
+            Please review this pull request and provide feedback on:
+            - Code quality and best practices
+            - Potential bugs or issues
+            - Performance considerations
+            - Security concerns
+            - Test coverage
+
+            Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
+
+            Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
+
+          claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
