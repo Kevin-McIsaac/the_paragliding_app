@@ -19,6 +19,7 @@ typedef ProviderProgressCallback = void Function({
   required bool success,
   required int stationCount,
   required List<WeatherStation> stations,  // Cumulative deduplicated list
+  bool passComplete,  // True on the final push of a provider's background pass
 });
 
 /// Orchestrator service for weather station data from multiple providers
@@ -58,15 +59,17 @@ class WeatherStationService {
 
       // Accumulator for progressive results
       final List<WeatherStation> allStations = [];
-      final List<List<WeatherStation>> providerResults = List.filled(enabledProviders.length, []);
       final Set<WeatherStationSource> providersWithApiCalls = {}; // Track which providers made API calls
 
       // Fetch from all enabled providers with progressive updates
       final futures = enabledProviders.asMap().entries.map((entry) async {
-        final index = entry.key;
         final provider = entry.value;
 
         try {
+          // Whether the provider used the push channel - push-based providers
+          // signal their own terminal event; blocking providers report
+          // exactly twice (start + final), so their await-return IS terminal.
+          bool hasPushed = false;
           // Pass callback directly to provider - let provider decide when to call it
           final stations = await provider.fetchStations(
             bounds,
@@ -84,11 +87,32 @@ class WeatherStationService {
                     );
                   }
                 : null,
+            // Cache-first providers (WU PWS) push refinements as their
+            // background passes land; each update flows through the same
+            // progress channel as a completion so the map re-renders. The
+            // final push carries passComplete so the screen can end the
+            // provider's loading state.
+            onStationsUpdated: onProgress != null
+                ? (updatedStations, {passComplete = false}) {
+                    hasPushed = true;
+                    allStations
+                      ..removeWhere((s) => s.source == provider.source)
+                      ..addAll(updatedStations);
+                    final deduplicatedSoFar = _deduplicateStations(allStations);
+                    onProgress.call(
+                      source: provider.source,
+                      displayName: provider.displayName,
+                      success: true,
+                      stationCount: updatedStations.length,
+                      stations: deduplicatedSoFar,
+                      passComplete: passComplete,
+                    );
+                  }
+                : null,
           );
           LoggingService.info('${provider.displayName}: fetched ${stations.length} stations');
 
           // Store result
-          providerResults[index] = stations;
 
           // Add to running total and deduplicate
           allStations.addAll(stations);
@@ -107,6 +131,10 @@ class WeatherStationService {
               success: true,
               stationCount: stations.length,
               stations: deduplicatedSoFar,  // Cumulative deduplicated list, not incremental
+              // Blocking providers report exactly twice (start + final);
+              // this is their terminal event. Push-based providers
+              // (onStationsUpdated) deliver their own terminal passComplete.
+              passComplete: !hasPushed,
             );
           }
 
@@ -125,6 +153,7 @@ class WeatherStationService {
               success: false,
               stationCount: 0,
               stations: deduplicatedSoFar,
+              passComplete: true,
             );
           }
 

@@ -1,0 +1,863 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
+
+import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:latlong2/latlong.dart';
+
+import '../../data/models/weather_station.dart';
+import '../../data/models/weather_station_source.dart';
+import '../../data/models/wind_data.dart';
+import '../../utils/map_constants.dart';
+import '../logging_service.dart';
+import '../api_keys.dart';
+import 'weather_station_provider.dart';
+
+/// Weather Underground personal weather station (PWS) provider.
+///
+/// Data comes from The Weather Company API (api.weather.com). Unlike the other
+/// providers there is no bbox listing: discovery uses
+/// `v3/location/near?product=pws`, which takes a single geocode point and
+/// returns the 10 nearest stations. To cover an arbitrary viewport with as few
+/// API calls as possible this provider uses **gap probing** (see
+/// docs/PWS_STATION_DISCOVERY.md):
+///
+/// - A persistent set of discovered stations is kept for the session.
+/// - A viewport is "covered" when its sample points all lie within
+///   [MapConstants.wuCoverageRadiusKm] of a known, fresh station - then zero
+///   API calls are made and stations come straight from the cache.
+/// - Otherwise only the uncovered sample points are probed and merged in.
+///
+/// Wind readings come from `pws/observations/current` (units=m → km/h
+/// natively). Stations whose `updateTimeUtc` is older than
+/// [MapConstants.wuStaleObservationCutoff] are dropped as dead.
+///
+/// Rate limits (1500/day, 30/min) are respected with a simple request
+/// throttle; any failure degrades to an empty result for that call.
+class WeatherUndergroundPwsProvider implements WeatherStationProvider {
+  static final WeatherUndergroundPwsProvider instance =
+      WeatherUndergroundPwsProvider._();
+  WeatherUndergroundPwsProvider._();
+
+  static const String _nearUrl = 'https://api.weather.com/v3/location/near';
+  static const String _currentUrl =
+      'https://api.weather.com/v2/pws/observations/current';
+
+  /// Maximum reading refreshes per background pass - keeps a wide viewport
+  /// from eating the whole 30/minute rate limit in one go.
+  static const int _maxReadingsPerPass = 30;
+
+  /// Minimum interval between API requests: 30/minute ≈ 2s, with margin.
+  static const Duration _minRequestInterval = Duration(milliseconds: 2050);
+
+  /// Where the last successful probe was aimed, and when. The point only
+  /// counts as coverage while its findings are trustworthy: after
+  /// [probePointTrustTTL] the probe's knowledge is considered aged out
+  /// (cached stations may have gone stale without it noticing), so the area
+  /// becomes probe-eligible again.
+  LatLng? _lastProbePoint;
+  DateTime? _lastProbeAt;
+  static const Duration probePointTrustTTL = Duration(minutes: 30);
+
+  /// Persistent session cache of discovered stations by stationId.
+  @visibleForTesting
+  final Map<String, DiscoveredPwsStation> discovered = {};
+
+  DateTime? _measurementsTimestamp;
+  DateTime _lastRequestAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  @override
+  WeatherStationSource get source => WeatherStationSource.weatherUndergroundPws;
+
+  @override
+  String get displayName => 'WU PWS';
+
+  @override
+  String get description => 'Weather Underground personal stations (global)';
+
+  @override
+  String get attributionName => 'Weather Underground';
+
+  @override
+  String get attributionUrl => 'https://www.wunderground.com/';
+
+  @override
+  Duration get cacheTTL => MapConstants.wuMeasurementsCacheTTL;
+
+  @override
+  bool get requiresApiKey => true;
+
+  @override
+  Future<bool> isConfigured() async {
+    return ApiKeys.wundergroundApiKey.isNotEmpty;
+  }
+
+  /// Serialized background-work queue. Probes and reading passes chain here
+  /// so API calls stay within the 30/min limit; fetchStations itself returns
+  /// instantly from cache and never waits on this queue.
+  ///
+  /// The queue tail is the task future itself - NOT a separate Completer. An
+  /// earlier version completed the caller's result via `return await` but left
+  /// the Completer never-completed, so the next caller to chain onto it parked
+  /// forever (seen live 2026-09-05: the Bakewell fetch queued behind the
+  /// warm-up and never ran).
+  Future<void>? _fetchQueue;
+
+  /// Bumped on every fetch request; background passes compare against this
+  /// and abort when superseded so a navigation away doesn't keep spending
+  /// rate limit.
+  int _generation = 0;
+
+  @override
+  Future<List<WeatherStation>> fetchStations(
+    LatLngBounds bounds, {
+    Function()? onApiCallStart,
+    void Function(List<WeatherStation> stations, {bool passComplete})?
+        onStationsUpdated,
+  }) async {
+    await _loadPersistedCache();
+    final generation = ++_generation;
+
+    // Cache-first: whatever we already know renders NOW - zero wait, always.
+    final cached = _stationsInBounds(bounds);
+    LoggingService.structured('WU_PWS_FETCH_CACHE_FIRST', {
+      'cached_stations': cached.length,
+      'known_stations': _discoveredCount,
+    });
+
+    // Background pass refines the view: one centre probe if the area is
+    // unknown, then readings, pushing updates through onStationsUpdated.
+    _enqueueBackgroundPass(bounds, apiKey: ApiKeys.wundergroundApiKey,
+        onApiCallStart: onApiCallStart, onStationsUpdated: onStationsUpdated,
+        generation: generation);
+
+    return cached;
+  }
+
+  /// Queue a discovery + reading pass behind any in-flight one. Fire and
+  /// forget: callers already have the cache answer.
+  void _enqueueBackgroundPass(
+    LatLngBounds bounds, {
+    required String apiKey,
+    Function()? onApiCallStart,
+    void Function(List<WeatherStation> stations, {bool passComplete})?
+        onStationsUpdated,
+    required int generation,
+  }) {
+    final previous = _fetchQueue ?? Future.value();
+    final task = previous
+        .catchError((_) {})
+        .then((_) => _backgroundPass(
+              bounds,
+              apiKey: apiKey,
+              onApiCallStart: onApiCallStart,
+              onStationsUpdated: onStationsUpdated,
+              generation: generation,
+            ));
+    _fetchQueue = task;
+  }
+
+  /// One background pass: centre probe (if the viewport is unknown), then
+  /// readings - pushing refined station lists as each stage lands.
+  Future<void> _backgroundPass(
+    LatLngBounds bounds, {
+    required String apiKey,
+    Function()? onApiCallStart,
+    void Function(List<WeatherStation> stations, {bool passComplete})?
+        onStationsUpdated,
+    required int generation,
+  }) async {
+    try {
+      if (apiKey.isEmpty) return;
+
+      bool superseded() => generation != _generation;
+      void push({bool passComplete = false}) =>
+          onStationsUpdated?.call(_stationsInBounds(bounds),
+              passComplete: passComplete);
+
+      // One centre probe when the viewport is unknown to the cache. The
+      // 10 nearest stations to the centre are exactly what a z13-14 user
+      // sees; country-wide density is not worth 12 grid probes at 2s each.
+      if (_isViewportCovered(bounds)) {
+        LoggingService.structured('WU_PWS_CACHE_HIT', {
+          'total_stations': _discoveredCount,
+          'fresh_stations': _freshCount,
+        });
+      } else {
+        if (superseded()) return;
+        onApiCallStart?.call();
+        await _probePoint(_boundsCentre(bounds), apiKey);
+        if (superseded()) {
+          LoggingService.structured('WU_PWS_ABORTED', {'stage': 'probe'});
+          return;
+        }
+        await _persistCacheNow();
+        if (!superseded()) push();
+      }
+
+      // Readings always background: the map already has markers; wind fills
+      // in and each reading batch re-notifies the screen.
+      if (superseded()) return;
+      await _refreshReadings(apiKey, bounds, superseded, onBatch: push);
+      // Re-check AFTER the awaits: a generation bump during a network call
+      // means this pass is serving a viewport nobody is looking at any more -
+      // pushing now would momentarily revert the map to the old station list.
+      if (!superseded()) push(passComplete: true);
+    } catch (e) {
+      LoggingService.error('WU PWS background pass failed', e);
+    }
+  }
+
+  /// The viewport is "covered" when its centre lies within the coverage
+  /// radius of a known fresh station, or within a short distance of a recent
+  /// probe point (prevents re-probing while panning inside a known area).
+  /// The probe-point credit expires: without this, a session two hours old
+  /// would consider an area covered while every cached station in it has
+  /// gone stale and dropped off the map - the view would stay empty forever.
+  bool _isViewportCovered(LatLngBounds bounds) {
+    final centre = _boundsCentre(bounds);
+    if (_isCovered(centre, discovered.values.where((s) => !s.isStale).toList())) {
+      return true;
+    }
+    final lastProbeAt = _lastProbeAt;
+    return _lastProbePoint != null &&
+        lastProbeAt != null &&
+        DateTime.now().difference(lastProbeAt) < probePointTrustTTL &&
+        _distanceKm(centre.latitude, centre.longitude,
+                _lastProbePoint!.latitude, _lastProbePoint!.longitude) <
+            MapConstants.wuCoverageRadiusKm;
+  }
+
+  /// Centre of [bounds] - the natural "where is the user looking" anchor for
+  /// a single location/near call.
+  LatLng _boundsCentre(LatLngBounds bounds) => LatLng(
+        (bounds.south + bounds.north) / 2,
+        (bounds.west + bounds.east) / 2,
+      );
+
+  /// Stations in [bounds] whose readings are missing or past the TTL.
+  List<DiscoveredPwsStation> _stationsNeedingReadings(LatLngBounds bounds) {
+    final inBounds = discovered.values
+        .where((s) =>
+            !s.isStale &&
+            bounds.contains(LatLng(s.latitude, s.longitude)))
+        .toList();
+    return inBounds.where((s) {
+      final fetched = s.readingFetchedAt;
+      if (fetched == null) return true;
+      return DateTime.now().difference(fetched) >
+          MapConstants.wuMeasurementsCacheTTL;
+    }).toList();
+  }
+
+  @override
+  Future<void> warmCache() async {
+    // Deliberately a no-op, unlike the other providers: Pioupiou/FFVL have
+    // global list endpoints where one warm call pre-loads everything, but WU
+    // discovery is point-based - a world warm-up spends ~12 probe calls on
+    // random grid points that may never be visited. Gap probing makes
+    // on-demand discovery cheap, so the first real viewport fetch discovers
+    // what it needs instead. This also stops the warm-up blocking the first
+    // viewport pass in the fetch queue (seen live: ~23s head-of-line wait).
+  }
+
+  @override
+  Future<Map<String, WindData>> fetchWeatherData(
+    List<WeatherStation> stations,
+  ) async {
+    if (stations.isEmpty) return {};
+
+    // Readings are attached during discovery (probes trigger a reading
+    // refresh), so just extract them by station key - like FFVL.
+    final Map<String, WindData> result = {};
+    for (final station in stations) {
+      if (station.windData != null) {
+        result[station.key] = station.windData!;
+      }
+    }
+
+    LoggingService.structured('WU_PWS_WEATHER_EXTRACTED', {
+      'total_stations': stations.length,
+      'stations_with_data': result.length,
+    });
+
+    return result;
+  }
+
+  @override
+  /// Drop readings, keep discovery. Called by the service's clearCache()
+  /// (refresh-all, filter changes): station positions are world knowledge
+  /// that cost probes to rebuild, so they survive; wind readings re-fetch on
+  /// the next background pass via the TTL check anyway. A user "refresh"
+  /// must not empty the map or re-spend the rate limit re-discovering.
+  ///
+  /// Tests use [clearCacheForTest] to reset the provider fully.
+  @override
+  void clearCache() {
+    for (final station in discovered.values) {
+      station.windData = null;
+      station.readingFetchedAt = null;
+      station.noData = false;
+    }
+    _measurementsTimestamp = null;
+    LoggingService.structured('WU_PWS_READINGS_CLEARED', {
+      'stations': discovered.length,
+    });
+  }
+
+  /// Full reset - discovery map AND persisted cache. Test-only seam;
+  /// production code goes through [clearCache], which preserves discovery.
+  @visibleForTesting
+  void clearCacheForTest() {
+    discovered.clear();
+    _measurementsTimestamp = null;
+    _lastProbePoint = null;
+    _lastProbeAt = null;
+    unawaited(() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_cachePrefsKey);
+      } catch (_) {}
+    }());
+    LoggingService.info('WU PWS cache cleared (incl. persisted)');
+  }
+
+  @override
+  Map<String, dynamic> getCacheStats() {
+    return {
+      'cached': discovered.isNotEmpty,
+      'total_stations': discovered.length,
+      'fresh_stations': _freshCount,
+      'stations_with_data':
+          discovered.values.where((s) => s.windData != null).length,
+      'measurements_age_minutes': _measurementsTimestamp == null
+          ? null
+          : DateTime.now().difference(_measurementsTimestamp!).inMinutes,
+    };
+  }
+
+  // --- discovery internals -------------------------------------------------
+
+  int get _discoveredCount => discovered.length;
+
+  int get _freshCount =>
+      discovered.values.where((s) => !s.isStale).length;
+
+  bool _isCovered(LatLng point, List<DiscoveredPwsStation> fresh) {
+    for (final station in fresh) {
+      if (_distanceKm(point.latitude, point.longitude, station.latitude,
+              station.longitude) <
+          MapConstants.wuCoverageRadiusKm) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Backing store for the discovered-station cache, so discovery survives
+  /// an app restart - station locations are a property of the world, not of
+  /// the session. Without this every restart re-probed 12 points for an
+  /// already-explored area (seen live 2026-09-05: a restart discarded 118
+  /// known stations and re-probed 12 points at ~2s each).
+  static const String _cachePrefsKey = 'wu_pws_discovered_stations_v1';
+
+  /// Memoized load: concurrent callers await the SAME future instead of the
+  /// second one racing past a prematurely-set flag and reading an empty map.
+  Future<void>? _cacheLoadFuture;
+
+  Future<void> _loadPersistedCache() {
+    return _cacheLoadFuture ??= _doLoadPersistedCache();
+  }
+
+  Future<void> _doLoadPersistedCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cachePrefsKey);
+      if (raw == null) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return;
+      for (final entry in decoded) {
+        if (entry is! Map<String, dynamic>) continue;
+        final s = DiscoveredPwsStation.fromJson(entry);
+        if (s != null) discovered.putIfAbsent(s.id, () => s);
+      }
+      LoggingService.structured('WU_PWS_CACHE_LOADED', {
+        'stations': discovered.length,
+      });
+    } catch (e) {
+      LoggingService.error('Failed to load WU PWS discovery cache', e);
+    }
+  }
+
+  /// Persist after discovery changes. Immediate (not debounced): a hot
+  /// restart or quick app kill never fired the old 5s debounce, so the
+  /// freshly probed area was re-probed on the next start - the exact cost
+  /// persistence exists to avoid.
+  Future<void> _persistCacheNow() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Persist position + identity only - readings age out and are
+      // re-fetched; staleness is judged at read time.
+      final json =
+          discovered.values.take(500).map((s) => s.toJson()).toList();
+      await prefs.setString(_cachePrefsKey, jsonEncode(json));
+      LoggingService.structured('WU_PWS_CACHE_PERSISTED', {
+        'stations': json.length,
+      });
+    } catch (e) {
+      LoggingService.error('Failed to persist WU PWS discovery cache', e);
+    }
+  }
+
+  /// Probe one point via v3/location/near, merging results into the cache.
+  Future<void> _probePoint(LatLng point, String apiKey) async {
+    await _throttle();
+
+    final stopwatch = Stopwatch()..start();
+    final uri = Uri.parse(
+      '$_nearUrl'
+      '?geocode=${point.latitude.toStringAsFixed(4)},${point.longitude.toStringAsFixed(4)}'
+      '&product=pws&format=json&apiKey=$apiKey',
+    );
+
+    LoggingService.structured('WU_PWS_REQUEST_START', {
+      'url': _nearUrl,
+      'geocode': '${point.latitude.toStringAsFixed(4)},${point.longitude.toStringAsFixed(4)}',
+      'key': '***',
+    });
+
+    final http.Response response;
+    try {
+      response = await http.get(uri, headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'TheParaglidingApp/1.0',
+      }).timeout(const Duration(seconds: 30));
+    } on TimeoutException {
+      LoggingService.structured('WU_PWS_TIMEOUT', {
+        'endpoint': 'location_near',
+        'duration_ms': stopwatch.elapsedMilliseconds,
+      });
+      return;
+    }
+
+    if (response.statusCode != 200) {
+      LoggingService.structured('WU_PWS_HTTP_ERROR', {
+        'endpoint': 'location_near',
+        'status_code': response.statusCode,
+      });
+      return;
+    }
+
+    final Map<String, dynamic>? decoded = _tryDecode(response.body);
+    if (decoded == null) return;
+
+    final location = decoded['location'];
+    if (location is! Map<String, dynamic>) return;
+    final ids = location['stationId'];
+    if (ids is! List) return;
+
+    int added = 0;
+    for (int i = 0; i < ids.length; i++) {
+      final id = ids[i]?.toString();
+      final lat = _asDouble(_at(location['latitude'], i));
+      final lon = _asDouble(_at(location['longitude'], i));
+      if (id == null || lat == null || lon == null) continue;
+
+      final distanceKm = _asDouble(_at(location['distanceKm'], i));
+      final existing = discovered[id];
+      if (existing != null) {
+        // Re-probe over a known station: refresh identity fields but keep
+        // reading state - clobbering windData/noData here would reset
+        // stations with wind back to "pending" and re-spend the rate limit
+        // re-fetching what we already have.
+        existing.name = _at(location['stationName'], i)?.toString();
+        existing.latitude = lat;
+        existing.longitude = lon;
+        existing.distanceKm = distanceKm;
+        existing.qcStatus = _asInt(_at(location['qcStatus'], i));
+        existing.updateTimeUtc ??= _parseTime(_at(location['updateTimeUtc'], i));
+        existing.coverageRadiusKm = distanceKm ?? 0;
+        continue;
+      }
+
+      added++;
+      discovered[id] = DiscoveredPwsStation(
+        id: id,
+        name: _at(location['stationName'], i)?.toString(),
+        latitude: lat,
+        longitude: lon,
+        distanceKm: distanceKm,
+        qcStatus: _asInt(_at(location['qcStatus'], i)),
+        updateTimeUtc: _parseTime(_at(location['updateTimeUtc'], i)),
+        coverageRadiusKm: distanceKm ?? 0,
+      );
+    }
+
+    LoggingService.structured('WU_PWS_PROBE_DONE', {
+      'returned': ids.length,
+      'new_stations': added,
+      'total_stations': _discoveredCount,
+      'duration_ms': stopwatch.elapsedMilliseconds,
+    });
+
+    _lastProbePoint = point;
+    _lastProbeAt = DateTime.now();
+  }
+
+  /// Fetch current observations for stations within [bounds] whose readings
+  /// are missing or older than the measurements TTL.
+  ///
+  /// Runs ONCE per fetch pass, after all probes - not per probe. Re-scanning
+  /// the whole cache after every probe made a pass take minutes (every call
+  /// throttled to 30/min) and starved the map of stations. At most
+  /// [_maxReadingsPerPass] stations are refreshed per pass so a world-sized
+  /// warm pass can't hog the rate limit; stations that answered without data
+  /// (HTTP 204) get their attempt stamped too, so they retry no more often
+  /// than the TTL instead of on every pass.
+  Future<void> _refreshReadings(
+    String apiKey,
+    LatLngBounds bounds,
+    bool Function() superseded, {
+    void Function()? onBatch,
+  }) async {
+    final inBounds = discovered.values
+        .where((s) =>
+            !s.isStale &&
+            bounds.contains(LatLng(s.latitude, s.longitude)))
+        .toList();
+    final needsReading = _stationsNeedingReadings(bounds);
+    if (needsReading.length > _maxReadingsPerPass) {
+      needsReading.removeRange(_maxReadingsPerPass, needsReading.length);
+    }
+    if (needsReading.isEmpty) return;
+
+    LoggingService.structured('WU_PWS_READING_PASS', {
+      'in_bounds': inBounds.length,
+      'to_refresh': needsReading.length,
+    });
+
+    for (final station in needsReading) {
+      if (superseded()) {
+        LoggingService.structured('WU_PWS_ABORTED', {
+          'stage': 'readings',
+          'readings_done': needsReading.indexOf(station),
+          'readings_total': needsReading.length,
+        });
+        return;
+      }
+      await _throttle();
+      final stopwatch = Stopwatch()..start();
+      try {
+        final uri = Uri.parse(
+          '$_currentUrl?stationId=${station.id}&format=json&units=m'
+          '&apiKey=$apiKey',
+        );
+        final response = await http.get(uri, headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'TheParaglidingApp/1.0',
+        }).timeout(const Duration(seconds: 30));
+
+        if (response.statusCode != 200) {
+          LoggingService.structured('WU_PWS_HTTP_ERROR', {
+            'endpoint': 'observations_current',
+            'station_id': station.id,
+            'status_code': response.statusCode,
+          });
+          // 204 (and 404) mean the station itself is silent/absent - remember
+          // that so the marker shows "no data" instead of pending forever.
+          // Any OTHER status (401 bad key, 429 rate limit, 5xx outage) is a
+          // service problem, not a property of the station: leave the attempt
+          // unstamped so the next pass retries as soon as possible.
+          if (response.statusCode == 204 || response.statusCode == 404) {
+            station.readingFetchedAt = DateTime.now();
+            station.noData = true;
+          }
+          continue;
+        }
+
+        final decoded = _tryDecode(response.body);
+        if (decoded == null) continue;
+        final obsList = decoded['observations'];
+        if (obsList is! List || obsList.isEmpty) {
+          station.readingFetchedAt = DateTime.now();
+          station.noData = true;
+          continue;
+        }
+        final obs = obsList.first;
+        if (obs is! Map<String, dynamic>) continue;
+
+        // Stamp before parsing: a record without wind (temp-only PWS) must
+        // not be re-fetched every pass either.
+        station.readingFetchedAt = DateTime.now();
+        // The observation's own time becomes the staleness anchor - this is
+        // what lets a restored (unknown-freshness) station converge to real
+        // staleness instead of staying "assumed alive" forever.
+        station.updateTimeUtc ??= _parseTime(obs['obsTimeUtc']);
+        final wind = _parseWind(obs);
+        if (wind != null) {
+          station.windData = wind;
+          // A station that once answered empty can recover; a successful
+          // wind reading always supersedes the no-data conclusion.
+          station.noData = false;
+        } else {
+          // Answered but carries no usable wind (temp-only PWS).
+          station.noData = true;
+        }
+        LoggingService.structured('WU_PWS_READING_OK', {
+          'station_id': station.id,
+          'has_wind': wind != null,
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
+        // Push the refined view after each reading so wind trails markers
+        // by seconds, not by the whole pass. The batch callback is
+        // generation-guarded in the caller.
+        if (!superseded()) onBatch?.call();
+      } on TimeoutException {
+        LoggingService.structured('WU_PWS_TIMEOUT', {
+          'endpoint': 'observations_current',
+          'station_id': station.id,
+        });
+      } catch (e) {
+        LoggingService.error(
+          'Failed to refresh WU PWS reading for ${station.id}',
+          e,
+        );
+      }
+    }
+  }
+
+  /// Parse wind from a pws/observations/current observation record.
+  @visibleForTesting
+  WindData? parseWind(Map<String, dynamic> obs) => _parseWind(obs);
+
+  WindData? _parseWind(Map<String, dynamic> obs) {
+    final metric = obs['metric'];
+    // observations/current names: metric.windSpeed/windGust, top-level winddir.
+    // (windspeedAvg/winddirAvg are the pws/history/all names - accepted as
+    // fallbacks so a shared parser stays honest if reused.)
+    final speed = metric is Map<String, dynamic>
+        ? _asDouble(metric['windSpeed'] ?? metric['windspeedAvg'])
+        : null;
+    final gust = metric is Map<String, dynamic>
+        ? _asDouble(metric['windGust'] ?? metric['windspeedHigh'])
+        : null;
+    final dir = _asDouble(obs['winddir'] ?? obs['winddirAvg']);
+    if (speed == null || dir == null) return null;
+
+    return WindData(
+      speedKmh: speed,
+      gustsKmh: gust,
+      directionDegrees: dir,
+      timestamp:
+          _parseTime(obs['obsTimeUtc']) ?? DateTime.now().toUtc(),
+    );
+  }
+
+  /// Convert discovered stations within bounds to [WeatherStation]s, dropping
+  /// stale ones so the map never shows dead stations.
+  List<WeatherStation> _stationsInBounds(LatLngBounds bounds) {    final stations = <WeatherStation>[];
+    int staleCount = 0;
+
+    for (final s in discovered.values) {
+      if (s.isStale) {
+        staleCount++;
+        continue;
+      }
+      if (!bounds.contains(LatLng(s.latitude, s.longitude))) continue;
+
+      stations.add(WeatherStation(
+        id: s.id,
+        source: source,
+        name: s.name,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        windData: s.windData,
+        observationType: s.noData
+            ? 'WU PWS (no wind data)'
+            : s.qcStatus == 1
+                ? 'WU PWS (QC passed)'
+                : 'WU PWS',
+        dataUrl: 'https://www.wunderground.com/dashboard/pws/${s.id}',
+      ));
+    }
+
+    LoggingService.structured('WU_PWS_BBOX_FILTER', {
+      'total_stations': _discoveredCount,
+      'stale_skipped': staleCount,
+      'filtered_count': stations.length,
+      'bounds':
+          '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
+    });
+
+    return stations;
+  }
+
+  /// Test seam for [_stationsInBounds]: converts the current discovery cache
+  /// to stations without any network access.
+  @visibleForTesting
+  List<WeatherStation> stationsInBoundsForTest(LatLngBounds bounds) =>
+      _stationsInBounds(bounds);
+
+  /// Test seam for [_isViewportCovered].
+  @visibleForTesting
+  bool viewportCoveredForTest(LatLngBounds bounds) => _isViewportCovered(bounds);
+
+  /// Test seam for [_lastProbePoint]; stamps the probe as just-made so the
+  /// trust TTL passes.
+  @visibleForTesting
+  set lastProbePointForTest(LatLng? point) {
+    _lastProbePoint = point;
+    _lastProbeAt = point == null ? null : DateTime.now();
+  }
+
+  /// Test seam for [_lastProbeAt].
+  @visibleForTesting
+  set lastProbeAtForTest(DateTime? at) => _lastProbeAt = at;
+
+  /// Wait so probe + reading calls together never exceed 30/minute.
+  Future<void> _throttle() async {
+    final now = DateTime.now();
+    final elapsed = now.difference(_lastRequestAt);
+    if (elapsed < _minRequestInterval) {
+      await Future.delayed(_minRequestInterval - elapsed);
+    }
+    _lastRequestAt = DateTime.now();
+  }
+
+  static dynamic _at(dynamic list, int index) =>
+      list is List && index < list.length ? list[index] : null;
+
+  static double? _asDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
+
+  static int? _asInt(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+
+  static DateTime? _parseTime(dynamic value) {
+    if (value == null) return null;
+    return DateTime.tryParse(value.toString());
+  }
+
+  static Map<String, dynamic>? _tryDecode(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (e) {
+      LoggingService.error('WU PWS: invalid JSON response', e);
+      return null;
+    }
+  }
+
+  /// Great-circle distance in km (haversine).
+  @visibleForTesting
+  double distanceKm(double lat1, double lon1, double lat2, double lon2) =>
+      _distanceKm(lat1, lon1, lat2, lon2);
+
+  double _distanceKm(double lat1, double lon1, double lat2, double lon2) {
+    const r = 6371.0;
+    final dLat = _degToRad(lat2 - lat1);
+    final dLon = _degToRad(lon2 - lon1);
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_degToRad(lat1)) *
+            math.cos(_degToRad(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+    return 2 * r * math.asin(math.sqrt(a));
+  }
+
+  double _degToRad(double deg) => deg * math.pi / 180.0;
+}
+
+/// A station learned from a v3/location/near response.
+///
+/// Mutable so wind readings can be refreshed in place without rebuilding the
+/// cache map.
+class DiscoveredPwsStation {
+  final String id;
+
+  /// Identity/position fields are mutable so a re-probe can refresh them
+  /// while keeping the object identity (and its reading state) intact.
+  String? name;
+  double latitude;
+  double longitude;
+  double? distanceKm;
+  int? qcStatus;
+
+  /// Distance from the probe point that discovered this station, reused as a
+  /// rough "already covered" radius for gap probing.
+  double coverageRadiusKm;
+
+  WindData? windData;
+  DateTime? readingFetchedAt;
+
+  /// Set once a reading pass confirms the station reports no usable wind
+  /// (HTTP 204, empty observations, or a record without wind). Session-only:
+  /// not persisted, so a future session re-checks the station once.
+  bool noData = false;
+
+  /// Last known report time. Mutable: after a cache restore it is null
+  /// (unknown, assumed alive) and the first successful reading sets it.
+  DateTime? updateTimeUtc;
+
+  DiscoveredPwsStation({
+    required this.id,
+    required this.name,
+    required this.latitude,
+    required this.longitude,
+    required this.distanceKm,
+    required this.qcStatus,
+    required this.updateTimeUtc,
+    required this.coverageRadiusKm,
+  });
+
+  /// True when the station hasn't reported within the staleness cutoff -
+  /// dead stations are dropped from the map.
+  ///
+  /// A null updateTimeUtc means freshness is UNKNOWN (fresh from a probe
+  /// response that omitted it, or a cache restore) - assume alive and let the
+  /// next reading pass stamp it. Treating unknown as stale made every
+  /// restored station vanish from coverage AND from the map (seen live:
+  /// 131 stations restored, PROBE_PLAN still reported known_stations=0).
+  bool get isStale {
+    final updated = updateTimeUtc;
+    if (updated == null) return false;
+    return DateTime.now().difference(updated) >
+        MapConstants.wuStaleObservationCutoff;
+  }
+
+  /// Persisted form: identity + position only. Readings and timestamps are
+  /// deliberately excluded - they age out and are re-fetched on demand.
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        if (name != null) 'name': name,
+        'lat': latitude,
+        'lon': longitude,
+        'cov': coverageRadiusKm,
+      };
+
+  static DiscoveredPwsStation? fromJson(Map<String, dynamic> json) {
+    final id = json['id']?.toString();
+    final lat = (json['lat'] as num?)?.toDouble();
+    final lon = (json['lon'] as num?)?.toDouble();
+    if (id == null || id.isEmpty || lat == null || lon == null) return null;
+    return DiscoveredPwsStation(
+      id: id,
+      name: json['name']?.toString(),
+      latitude: lat,
+      longitude: lon,
+      distanceKm: null,
+      qcStatus: null,
+      updateTimeUtc: null, // unknown after restore; will refresh on fetch
+      coverageRadiusKm: (json['cov'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}

@@ -34,9 +34,17 @@ abstract class WeatherStationProvider {
   ///
   /// [onApiCallStart] - Optional callback that provider calls BEFORE making API requests
   /// Allows UI to show loading indicator only for providers making network calls
+  ///
+  /// [onStationsUpdated] - Optional callback that provider calls whenever it
+  /// has a better station list than the one it returned. Lets a provider
+  /// return its cache instantly and refine in the background (point-based
+  /// APIs like WU PWS discovery); other providers never call it. The final
+  /// call of a background pass carries [passComplete] = true.
   Future<List<WeatherStation>> fetchStations(
     LatLngBounds bounds, {
     Function()? onApiCallStart,
+    void Function(List<WeatherStation> stations, {bool passComplete})?
+        onStationsUpdated,
   });
 
   /// Fetch current weather data for a list of stations

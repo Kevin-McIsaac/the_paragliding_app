@@ -34,6 +34,38 @@ single source of truth - do not duplicate it here.
   `--concurrency=1`.
 - `kill "$(cat dev_data/flutter.pid)"` to stop a running app.
 
+## 🤖 Agent environment facts (read before running anything)
+
+These cost real debugging time when learned by trial and error (2026-09-05,
+WU PWS session - three failed app starts and one wrong-directory analyze run):
+
+1. **Read the relevant skill FIRST, by path, before running its commands.**
+   `.claude/skills/` files are not auto-loaded. Non-negotiable triggers:
+   - about to run the app, reload, screenshot, drive the UI, or use adb
+     → read `.claude/skills/run-app/SKILL.md`
+   - about to run `flutter test`, `flutter analyze`, or touch fixtures
+     → read `.claude/skills/testing/SKILL.md`
+   Do not reconstruct the commands from memory - the skills carry traps this
+   file deliberately does not duplicate.
+
+2. **Agent shells do not inherit the interactive environment.**
+   `flutter` is NOT on PATH (it lives at `~/flutter/bin`), and the sandbox
+   makes `~/.config` read-only (flutter tools die with
+   `FileSystemException: ... /home/<user>/.config/flutter`). For plain
+   analyze/test runs:
+   ```bash
+   export PATH="$HOME/flutter/bin:$PATH" \
+          XDG_CONFIG_HOME=/tmp/flutter-config XDG_DATA_HOME=/tmp/flutter-data
+   ```
+   For `bin/dev_*.sh` and `adb`, do NOT do this piecemeal - the run-app skill
+   requires those with the sandbox off entirely, which fixes PATH and config
+   in one move.
+
+3. **Working directory**: `flutter analyze` / `flutter test` run from
+   `the_paragliding_app/`, not the repo root. `bin/dev_*.sh` run from the repo
+   root. Getting this wrong can silently analyze/build the wrong tree (a
+   root-level run once reported "39645 issues" from build artifacts).
+
 ## 📁 Key Files (Most Accessed)
 
 | File | Purpose | Usage Frequency |

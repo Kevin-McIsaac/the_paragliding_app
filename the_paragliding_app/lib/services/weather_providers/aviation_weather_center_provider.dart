@@ -55,6 +55,7 @@ class AviationWeatherCenterProvider implements WeatherStationProvider {
   Future<List<WeatherStation>> fetchStations(
     LatLngBounds bounds, {
     Function()? onApiCallStart,
+    void Function(List<WeatherStation>)? onStationsUpdated,
   }) async {
     // Generate cache key from bounds
     final cacheKey = _getBoundsCacheKey(bounds);

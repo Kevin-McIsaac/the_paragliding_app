@@ -30,8 +30,16 @@ class ApiKeys {
   /// Cesium Ion Access Token (optional, for 3D map visualization)
   static const String cesiumIonToken = String.fromEnvironment('CESIUM_ION_TOKEN');
 
+  /// Weather Underground PWS key (api.weather.com) - TEMPORARY shared key.
+  ///
+  /// The PWS_STATION_DISCOVERY.md policy is that each user supplies their own
+  /// free key (wunderground.com/member/api-keys). Until that in-app flow
+  /// exists, a key is passed via dart-define like the others. It is still
+  /// recoverable from a shipped binary - treat it as public.
+  static const String wundergroundApiKey = String.fromEnvironment('WUNDERGROUND_API_KEY');
+
   static bool get _anyKeyConfigured =>
-      ffvlApiKey.isNotEmpty || openAipApiKey.isNotEmpty || cesiumIonToken.isNotEmpty;
+      ffvlApiKey.isNotEmpty || openAipApiKey.isNotEmpty || cesiumIonToken.isNotEmpty || wundergroundApiKey.isNotEmpty;
 
   /// Log which keys are configured, and warn about the one the app needs.
   ///
@@ -43,6 +51,7 @@ class ApiKeys {
       'ffvl_configured': ffvlApiKey.isNotEmpty,
       'openaip_configured': openAipApiKey.isNotEmpty,
       'cesium_configured': cesiumIonToken.isNotEmpty,
+      'wunderground_configured': wundergroundApiKey.isNotEmpty,
       // Any key being set proves the defines landed. Keying this off FFVL alone
       // reported "none" for a build that had OpenAIP and Cesium but no FFVL
       // secret - contradicting the openaip_configured: true on the same line.

@@ -63,6 +63,7 @@ class BomWeatherProvider implements WeatherStationProvider {
   Future<List<WeatherStation>> fetchStations(
     LatLngBounds bounds, {
     Function()? onApiCallStart,
+    void Function(List<WeatherStation>)? onStationsUpdated,
   }) async {
     try {
       // Step 1: Determine which state(s) overlap with view bounds
