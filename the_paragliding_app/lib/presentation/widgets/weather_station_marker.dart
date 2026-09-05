@@ -50,8 +50,12 @@ class WeatherStationMarker extends StatelessWidget {
       }
     } else if (_isNoDataStation(station)) {
       tooltipText = '${station.name ?? station.id}\nNo wind data (station reports none)';
-    } else {
+    } else if (_isPendingStation(station)) {
+      // Only WU PWS loads wind in the background; every other provider's
+      // data-less station simply has no data.
       tooltipText = '${station.name ?? station.id}\nWind loading…';
+    } else {
+      tooltipText = '${station.name ?? station.id}\nNo wind data';
     }
 
     return Tooltip(

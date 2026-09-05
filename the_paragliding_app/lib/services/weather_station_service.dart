@@ -59,12 +59,10 @@ class WeatherStationService {
 
       // Accumulator for progressive results
       final List<WeatherStation> allStations = [];
-      final List<List<WeatherStation>> providerResults = List.filled(enabledProviders.length, []);
       final Set<WeatherStationSource> providersWithApiCalls = {}; // Track which providers made API calls
 
       // Fetch from all enabled providers with progressive updates
       final futures = enabledProviders.asMap().entries.map((entry) async {
-        final index = entry.key;
         final provider = entry.value;
 
         try {
@@ -97,7 +95,6 @@ class WeatherStationService {
             onStationsUpdated: onProgress != null
                 ? (updatedStations, {passComplete = false}) {
                     hasPushed = true;
-                    providerResults[index] = updatedStations;
                     allStations
                       ..removeWhere((s) => s.source == provider.source)
                       ..addAll(updatedStations);
@@ -116,7 +113,6 @@ class WeatherStationService {
           LoggingService.info('${provider.displayName}: fetched ${stations.length} stations');
 
           // Store result
-          providerResults[index] = stations;
 
           // Add to running total and deduplicate
           allStations.addAll(stations);

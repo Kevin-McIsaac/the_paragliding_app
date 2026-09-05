@@ -53,9 +53,14 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
   /// Minimum interval between API requests: 30/minute ≈ 2s, with margin.
   static const Duration _minRequestInterval = Duration(milliseconds: 2050);
 
-  /// Where the last successful probe was aimed; panning within this radius
-  /// of it doesn't re-probe (the 10 nearest to the last probe cover here).
+  /// Where the last successful probe was aimed, and when. The point only
+  /// counts as coverage while its findings are trustworthy: after
+  /// [probePointTrustTTL] the probe's knowledge is considered aged out
+  /// (cached stations may have gone stale without it noticing), so the area
+  /// becomes probe-eligible again.
   LatLng? _lastProbePoint;
+  DateTime? _lastProbeAt;
+  static const Duration probePointTrustTTL = Duration(minutes: 30);
 
   /// Persistent session cache of discovered stations by stationId.
   @visibleForTesting
@@ -105,8 +110,6 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
   /// and abort when superseded so a navigation away doesn't keep spending
   /// rate limit.
   int _generation = 0;
-
-  bool _cacheLoaded = false;
 
   @override
   Future<List<WeatherStation>> fetchStations(
@@ -192,13 +195,16 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
           return;
         }
         await _persistCacheNow();
-        push();
+        if (!superseded()) push();
       }
 
       // Readings always background: the map already has markers; wind fills
       // in and each reading batch re-notifies the screen.
       if (superseded()) return;
       await _refreshReadings(apiKey, bounds, superseded, onBatch: push);
+      // Re-check AFTER the awaits: a generation bump during a network call
+      // means this pass is serving a viewport nobody is looking at any more -
+      // pushing now would momentarily revert the map to the old station list.
       if (!superseded()) push(passComplete: true);
     } catch (e) {
       LoggingService.error('WU PWS background pass failed', e);
@@ -206,15 +212,23 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
   }
 
   /// The viewport is "covered" when its centre lies within the coverage
-  /// radius of a known fresh station, or within a short distance of the last
+  /// radius of a known fresh station, or within a short distance of a recent
   /// probe point (prevents re-probing while panning inside a known area).
+  /// The probe-point credit expires: without this, a session two hours old
+  /// would consider an area covered while every cached station in it has
+  /// gone stale and dropped off the map - the view would stay empty forever.
   bool _isViewportCovered(LatLngBounds bounds) {
     final centre = _boundsCentre(bounds);
-    return _isCovered(centre, discovered.values.where((s) => !s.isStale).toList()) ||
-        (_lastProbePoint != null &&
-            _distanceKm(centre.latitude, centre.longitude,
-                    _lastProbePoint!.latitude, _lastProbePoint!.longitude) <
-                MapConstants.wuCoverageRadiusKm);
+    if (_isCovered(centre, discovered.values.where((s) => !s.isStale).toList())) {
+      return true;
+    }
+    final lastProbeAt = _lastProbeAt;
+    return _lastProbePoint != null &&
+        lastProbeAt != null &&
+        DateTime.now().difference(lastProbeAt) < probePointTrustTTL &&
+        _distanceKm(centre.latitude, centre.longitude,
+                _lastProbePoint!.latitude, _lastProbePoint!.longitude) <
+            MapConstants.wuCoverageRadiusKm;
   }
 
   /// Centre of [bounds] - the natural "where is the user looking" anchor for
@@ -280,7 +294,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
   /// the next background pass via the TTL check anyway. A user "refresh"
   /// must not empty the map or re-spend the rate limit re-discovering.
   ///
-  /// Tests use [clearCache] below to reset the provider fully.
+  /// Tests use [clearCacheForTest] to reset the provider fully.
   @override
   void clearCache() {
     for (final station in discovered.values) {
@@ -301,6 +315,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     discovered.clear();
     _measurementsTimestamp = null;
     _lastProbePoint = null;
+    _lastProbeAt = null;
     unawaited(() async {
       try {
         final prefs = await SharedPreferences.getInstance();
@@ -349,9 +364,15 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
   /// known stations and re-probed 12 points at ~2s each).
   static const String _cachePrefsKey = 'wu_pws_discovered_stations_v1';
 
-  Future<void> _loadPersistedCache() async {
-    if (_cacheLoaded) return;
-    _cacheLoaded = true;
+  /// Memoized load: concurrent callers await the SAME future instead of the
+  /// second one racing past a prematurely-set flag and reading an empty map.
+  Future<void>? _cacheLoadFuture;
+
+  Future<void> _loadPersistedCache() {
+    return _cacheLoadFuture ??= _doLoadPersistedCache();
+  }
+
+  Future<void> _doLoadPersistedCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_cachePrefsKey);
@@ -446,7 +467,24 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
       if (id == null || lat == null || lon == null) continue;
 
       final distanceKm = _asDouble(_at(location['distanceKm'], i));
-      final station = DiscoveredPwsStation(
+      final existing = discovered[id];
+      if (existing != null) {
+        // Re-probe over a known station: refresh identity fields but keep
+        // reading state - clobbering windData/noData here would reset
+        // stations with wind back to "pending" and re-spend the rate limit
+        // re-fetching what we already have.
+        existing.name = _at(location['stationName'], i)?.toString();
+        existing.latitude = lat;
+        existing.longitude = lon;
+        existing.distanceKm = distanceKm;
+        existing.qcStatus = _asInt(_at(location['qcStatus'], i));
+        existing.updateTimeUtc ??= _parseTime(_at(location['updateTimeUtc'], i));
+        existing.coverageRadiusKm = distanceKm ?? 0;
+        continue;
+      }
+
+      added++;
+      discovered[id] = DiscoveredPwsStation(
         id: id,
         name: _at(location['stationName'], i)?.toString(),
         latitude: lat,
@@ -456,9 +494,6 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
         updateTimeUtc: _parseTime(_at(location['updateTimeUtc'], i)),
         coverageRadiusKm: distanceKm ?? 0,
       );
-
-      if (!discovered.containsKey(id)) added++;
-      discovered[id] = station;
     }
 
     LoggingService.structured('WU_PWS_PROBE_DONE', {
@@ -469,6 +504,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     });
 
     _lastProbePoint = point;
+    _lastProbeAt = DateTime.now();
   }
 
   /// Fetch current observations for stations within [bounds] whose readings
@@ -530,13 +566,15 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
             'station_id': station.id,
             'status_code': response.statusCode,
           });
-          // Stamp the attempt (204 = station silent) so it retries no more
-          // often than the TTL instead of on every pass.
-          station.readingFetchedAt = DateTime.now();
-          // A 204 means the station is alive but reports nothing usable -
-          // remember that so the marker can show "no data" instead of
-          // spinning forever as "pending".
-          station.noData = true;
+          // 204 (and 404) mean the station itself is silent/absent - remember
+          // that so the marker shows "no data" instead of pending forever.
+          // Any OTHER status (401 bad key, 429 rate limit, 5xx outage) is a
+          // service problem, not a property of the station: leave the attempt
+          // unstamped so the next pass retries as soon as possible.
+          if (response.statusCode == 204 || response.statusCode == 404) {
+            station.readingFetchedAt = DateTime.now();
+            station.noData = true;
+          }
           continue;
         }
 
@@ -561,6 +599,9 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
         final wind = _parseWind(obs);
         if (wind != null) {
           station.windData = wind;
+          // A station that once answered empty can recover; a successful
+          // wind reading always supersedes the no-data conclusion.
+          station.noData = false;
         } else {
           // Answered but carries no usable wind (temp-only PWS).
           station.noData = true;
@@ -571,8 +612,9 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
           'duration_ms': stopwatch.elapsedMilliseconds,
         });
         // Push the refined view after each reading so wind trails markers
-        // by seconds, not by the whole pass.
-        onBatch?.call();
+        // by seconds, not by the whole pass. The batch callback is
+        // generation-guarded in the caller.
+        if (!superseded()) onBatch?.call();
       } on TimeoutException {
         LoggingService.structured('WU_PWS_TIMEOUT', {
           'endpoint': 'observations_current',
@@ -663,9 +705,17 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
   @visibleForTesting
   bool viewportCoveredForTest(LatLngBounds bounds) => _isViewportCovered(bounds);
 
-  /// Test seam for [_lastProbePoint].
+  /// Test seam for [_lastProbePoint]; stamps the probe as just-made so the
+  /// trust TTL passes.
   @visibleForTesting
-  set lastProbePointForTest(LatLng? point) => _lastProbePoint = point;
+  set lastProbePointForTest(LatLng? point) {
+    _lastProbePoint = point;
+    _lastProbeAt = point == null ? null : DateTime.now();
+  }
+
+  /// Test seam for [_lastProbeAt].
+  @visibleForTesting
+  set lastProbeAtForTest(DateTime? at) => _lastProbeAt = at;
 
   /// Wait so probe + reading calls together never exceed 30/minute.
   Future<void> _throttle() async {
@@ -733,15 +783,18 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
 /// cache map.
 class DiscoveredPwsStation {
   final String id;
-  final String? name;
-  final double latitude;
-  final double longitude;
-  final double? distanceKm;
-  final int? qcStatus;
+
+  /// Identity/position fields are mutable so a re-probe can refresh them
+  /// while keeping the object identity (and its reading state) intact.
+  String? name;
+  double latitude;
+  double longitude;
+  double? distanceKm;
+  int? qcStatus;
 
   /// Distance from the probe point that discovered this station, reused as a
   /// rough "already covered" radius for gap probing.
-  final double coverageRadiusKm;
+  double coverageRadiusKm;
 
   WindData? windData;
   DateTime? readingFetchedAt;
