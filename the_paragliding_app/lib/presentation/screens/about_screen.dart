@@ -368,6 +368,12 @@ class _AboutScreenState extends State<AboutScreen> {
                       icon: Icons.wb_sunny,
                       text: 'Australian Bureau of Meteorology',
                     ),
+                    // Weather Underground PWS
+                    AppAttributionLink.compact(
+                      url: 'https://www.wunderground.com/',
+                      icon: Icons.home_mini,
+                      text: 'Weather Underground PWS Contributors',
+                    ),
                   ],
                 ),
               ),

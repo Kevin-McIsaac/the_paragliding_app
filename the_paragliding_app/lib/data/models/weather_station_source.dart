@@ -23,4 +23,8 @@ enum WeatherStationSource {
   /// Bureau of Meteorology (BOM) from reg.bom.gov.au
   /// Australian weather stations with real-time observations
   bom,
+
+  /// Weather Underground personal weather stations (PWS) from api.weather.com
+  /// Community stations worldwide, discovered via v3/location/near
+  weatherUndergroundPws,
 }

@@ -17,6 +17,16 @@ implementation, so 3D screens show a "3D Map Not Available" placeholder on deskt
 
 ## 2. Start it
 
+> **Agent shells don't inherit the interactive environment.** `flutter` is not on
+> PATH in an agent shell (it lives at `~/flutter/bin`), and the sandbox makes
+> `~/.config` read-only so flutter tools die with
+> `FileSystemException: ... ~/.config/flutter` before doing anything. Running with
+> the sandbox off (below) fixes both at once. If a sandboxed run is unavoidable
+> (plain analyze/test only), export:
+> `PATH="$HOME/flutter/bin:$PATH" XDG_CONFIG_HOME=/tmp/flutter-config XDG_DATA_HOME=/tmp/flutter-data`
+> Verified 2026-09-05 after `dev_run.sh` failed three times in a row for exactly
+> these two reasons, each misread as a different problem.
+
 > **Run every `bin/dev_run.sh` with the sandbox disabled** (`dangerouslyDisableSandbox:
 > true`). This is not an adb-only rule — it applies to the plain desktop run too. The
 > sandbox reaches neither the X11 socket nor the phone's LAN address, and in both cases

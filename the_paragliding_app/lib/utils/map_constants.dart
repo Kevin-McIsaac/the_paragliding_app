@@ -49,6 +49,16 @@ class MapConstants {
   static const Duration bomStationListCacheTTL = Duration(hours: 24); // Station locations don't change
   static const Duration bomObservationCacheTTL = Duration(minutes: 10); // BOM updates every 10 minutes
 
+  // Weather Underground PWS-specific caching (gap-probing discovery strategy)
+  static const Duration wuStationListCacheTTL = Duration(hours: 24); // Stations don't move
+  static const Duration wuMeasurementsCacheTTL = Duration(minutes: 10); // PWS updates ~5min
+  // How far a discovered station is assumed to "cover" for gap probing:
+  // v3/location/near returns the 10 nearest stations per probe point, so a
+  // point within this radius of a known station is unlikely to reveal new ones.
+  static const double wuCoverageRadiusKm = 12.0;
+  // Drop stations whose last update is older than this (dead stations)
+  static const Duration wuStaleObservationCutoff = Duration(hours: 2);
+
   // Map UI constants
   static const double mapPadding = 0.005;
 

@@ -360,7 +360,9 @@ class _WeatherStationDialog extends StatelessWidget {
       url = 'https://aviationweather.gov/data/metar/?decoded=1&ids=${station.id}';
     } else if (station.source == WeatherStationSource.pioupiou) {
       url = 'https://www.openwindmap.org/windbird-${station.id}';
-    } else if (station.source == WeatherStationSource.ffvl && station.dataUrl != null) {
+    } else if ((station.source == WeatherStationSource.ffvl ||
+                station.source == WeatherStationSource.weatherUndergroundPws) &&
+               station.dataUrl != null) {
       url = station.dataUrl!;
     } else {
       url = provider.attributionUrl;

@@ -21,6 +21,7 @@ class MapFilterDialog extends StatefulWidget {
   final bool pioupiouEnabled;
   final bool ffvlEnabled;
   final bool bomEnabled;
+  final bool wundergroundPwsEnabled;
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
@@ -35,6 +36,7 @@ class MapFilterDialog extends StatefulWidget {
     bool pioupiouEnabled,
     bool ffvlEnabled,
     bool bomEnabled,
+    bool wundergroundPwsEnabled,
     Map<String, bool> types,
     Map<String, bool> classes,
     double maxAltitudeFt,
@@ -52,6 +54,7 @@ class MapFilterDialog extends StatefulWidget {
     required this.pioupiouEnabled,
     required this.ffvlEnabled,
     required this.bomEnabled,
+    required this.wundergroundPwsEnabled,
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
@@ -73,6 +76,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
   late bool _pioupiouEnabled;
   late bool _ffvlEnabled;
   late bool _bomEnabled;
+  late bool _wundergroundPwsEnabled;
   late Map<String, bool> _airspaceTypes;
   late Map<String, bool> _icaoClasses;
   late double _maxAltitudeFt;
@@ -118,6 +122,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     _pioupiouEnabled = widget.pioupiouEnabled;
     _ffvlEnabled = widget.ffvlEnabled;
     _bomEnabled = widget.bomEnabled;
+    _wundergroundPwsEnabled = widget.wundergroundPwsEnabled;
     _airspaceTypes = Map<String, bool>.from(widget.airspaceTypes);
     _icaoClasses = Map<String, bool>.from(widget.icaoClasses);
     _maxAltitudeFt = widget.maxAltitudeFt;
@@ -523,6 +528,17 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.bom).description,
                 onChanged: _weatherStationsEnabled ? (value) => setState(() {
                   _bomEnabled = value ?? true;
+                  _applyFiltersImmediately();
+                }) : null,
+              ),
+              const SizedBox(height: 2),
+              // Weather Underground PWS provider (global, requires user key)
+              _buildProviderCheckbox(
+                value: _wundergroundPwsEnabled,
+                label: 'Wunderground PWS',
+                subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.weatherUndergroundPws).description,
+                onChanged: _weatherStationsEnabled ? (value) => setState(() {
+                  _wundergroundPwsEnabled = value ?? true;
                   _applyFiltersImmediately();
                 }) : null,
               ),
@@ -1114,7 +1130,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
       'clipping_enabled': _clippingEnabled,
     });
 
-    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _weatherStationsEnabled, _metarEnabled, _nwsEnabled, _pioupiouEnabled, _ffvlEnabled, _bomEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
+    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _weatherStationsEnabled, _metarEnabled, _nwsEnabled, _pioupiouEnabled, _ffvlEnabled, _bomEnabled, _wundergroundPwsEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
   }
 
   /// Build a provider checkbox widget

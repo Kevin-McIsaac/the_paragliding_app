@@ -57,6 +57,14 @@ would call the proxy, and only the proxy would hold the key.
 - **Purpose**: 3D map visualization
 - **Get it from**: <https://ion.cesium.com/tokens>
 
+### 4. Wunderground PWS Key (Optional, TEMPORARY shared key)
+
+- **Purpose**: Weather Underground personal weather stations (api.weather.com PWS APIs)
+- **Note**: Temporary. The target state (see `docs/PWS_STATION_DISCOVERY.md`) is that each
+  user pastes their own free key from <https://www.wunderground.com/member/api-keys>. Until
+  that in-app flow exists, a shared key is injected via `WUNDERGROUND_API_KEY` like the
+  others. It is still recoverable from a shipped binary — treat it as public.
+
 ### Not Google Maps
 
 The app uses `flutter_map` with OpenStreetMap. `google_maps_flutter` is not a dependency, and
@@ -87,7 +95,7 @@ flutter build appbundle --release --dart-define-from-file=env.json
 CI (`.github/workflows/build.yml`) injects each key from repository secrets. Add them under
 **Settings → Secrets and variables → Actions**:
 
-`FFVL_API_KEY`, `OPENAIP_API_KEY`, `CESIUM_ION_TOKEN`
+`FFVL_API_KEY`, `OPENAIP_API_KEY`, `CESIUM_ION_TOKEN`, `WUNDERGROUND_API_KEY`
 
 For a local release build, pass `--dart-define-from-file=env.json` explicitly. A release built
 without it will start and run, but FFVL weather, OpenAIP overlays and Cesium 3D will all be
@@ -99,7 +107,7 @@ The app logs key status at startup:
 
 ```
 [API_KEYS_STATUS] {ffvl_configured: true, openaip_configured: true,
-                   cesium_configured: true, source: dart-define}
+                   cesium_configured: true, wunderground_configured: true, source: dart-define}
 ```
 
 `source: none` means no keys were injected.
@@ -120,6 +128,7 @@ re-requesting, and search Gmail for the confirmation message first (cheapest rec
 | `FFVL_API_KEY` | <https://data.ffvl.fr/> | Email FFVL data administration. They reply with "voici votre clé API FFVL : ..." | 32-char lowercase hex |
 | `OPENAIP_API_KEY` | <https://www.openaip.net/> | Log in → user profile → API keys → regenerate or copy existing | 32-char lowercase hex |
 | `CESIUM_ION_TOKEN` | <https://ion.cesium.com/tokens> | Log in → Access Tokens → create a new token or copy the default | JWT, starts with `eyJ...` |
+| `WUNDERGROUND_API_KEY` | <https://www.wunderground.com/member/api-keys> | Log in → member profile → API keys (requires an active PWS device entry) | 32-char alphanumeric |
 
 For Cesium, log in with the GitHub account and use the **"The Paragliding App Default"**
 token — not the account's original default token, which has been rotated.

@@ -7,6 +7,14 @@ description: Run and write tests for this Flutter app, and diagnose CI/analyze f
 
 ## Commands
 
+**Agent shells need the environment exported first** — `flutter` is not on PATH and
+`~/.config` is read-only under the sandbox:
+
+```bash
+export PATH="$HOME/flutter/bin:$PATH" \
+       XDG_CONFIG_HOME=/tmp/flutter-config XDG_DATA_HOME=/tmp/flutter-data
+```
+
 ```bash
 flutter analyze                              # run after complex, multi-file changes
 flutter analyze --write=analyzer.log         # ... and save it to a file
@@ -17,7 +25,9 @@ flutter test <file> --plain-name "group"     # one group - seconds, not ~100s
 flutter test --tags network --run-skipped    # live-API tests, skipped by default
 ```
 
-Run these from `the_paragliding_app/` (the app subdirectory), not the repo root.
+Run these from `the_paragliding_app/` (the app subdirectory), not the repo root. A
+root-level run silently analyzes/builds the wrong tree — it once reported "39645
+issues" from build artifacts (2026-09-05).
 
 Iterate on a group, run the file before committing the change, run everything before
 pushing.

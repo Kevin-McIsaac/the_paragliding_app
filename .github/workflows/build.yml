@@ -261,16 +261,19 @@ jobs:
           FFVL_API_KEY: ${{ secrets.FFVL_API_KEY }}
           OPENAIP_API_KEY: ${{ secrets.OPENAIP_API_KEY }}
           CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
+          WUNDERGROUND_API_KEY: ${{ secrets.WUNDERGROUND_API_KEY }}
         run: |
           cd the_paragliding_app
           flutter build apk --release \
             --dart-define=FFVL_API_KEY="$FFVL_API_KEY" \
             --dart-define=OPENAIP_API_KEY="$OPENAIP_API_KEY" \
-            --dart-define=CESIUM_ION_TOKEN="$CESIUM_ION_TOKEN"
+            --dart-define=CESIUM_ION_TOKEN="$CESIUM_ION_TOKEN" \
+            --dart-define=WUNDERGROUND_API_KEY="$WUNDERGROUND_API_KEY"
           flutter build appbundle --release \
             --dart-define=FFVL_API_KEY="$FFVL_API_KEY" \
             --dart-define=OPENAIP_API_KEY="$OPENAIP_API_KEY" \
-            --dart-define=CESIUM_ION_TOKEN="$CESIUM_ION_TOKEN"
+            --dart-define=CESIUM_ION_TOKEN="$CESIUM_ION_TOKEN" \
+            --dart-define=WUNDERGROUND_API_KEY="$WUNDERGROUND_API_KEY"
 
       # These assertions are the point of this job. A debug-signed artifact and one
       # with .env baked in both build cleanly and look completely normal: the first
