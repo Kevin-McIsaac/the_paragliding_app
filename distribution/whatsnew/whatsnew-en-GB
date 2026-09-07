@@ -1,4 +1,8 @@
-• Wind forecasts for your sites load noticeably faster - requests now run in
-  parallel and caches are warmed as the app starts, so wind is ready when you
-  open a site instead of arriving after it
-• Fixed the splash screen overflowing on the very first frame on desktop
+• Weather Underground personal weather stations are now available as a sixth
+  weather source - pick a nearby PWS when adding or editing a site to see
+  live readings alongside the existing forecasts
+• Nearby PWS discovery is faster: results are fetched cache-first and
+  cached between visits, and refreshing sites keeps your stations while
+  clearing only their readings
+
+(End of file - 5 lines)
