@@ -1,8 +1,5 @@
-• Weather Underground personal weather stations are now available as a sixth
-  weather source - pick a nearby PWS when adding or editing a site to see
-  live readings alongside the existing forecasts
-• Nearby PWS discovery is faster: results are fetched cache-first and
-  cached between visits, and refreshing sites keeps your stations while
-  clearing only their readings
+• Internal build fix: Weather Underground PWS stations now appear on the
+  nearby-sites map - the previous build was missing the key that powers
+  that layer, so no stations were shown
 
-(End of file - 5 lines)
+(End of file - 3 lines)
