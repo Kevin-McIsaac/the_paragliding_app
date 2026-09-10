@@ -198,14 +198,22 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
         if (!superseded()) push();
       }
 
-      // Readings always background: the map already has markers; wind fills
-      // in and each reading batch re-notifies the screen.
-      if (superseded()) return;
-      await _refreshReadings(apiKey, bounds, superseded, onBatch: push);
-      // Re-check AFTER the awaits: a generation bump during a network call
-      // means this pass is serving a viewport nobody is looking at any more -
-      // pushing now would momentarily revert the map to the old station list.
-      if (!superseded()) push(passComplete: true);
+      // Readings are NOT generation-cancelled (unlike probes). A freshly
+      // probed area needs its readings no matter which viewport triggered
+      // the pass - seen live 2026-09-10: a probe found 10 new stations, the
+      // user kept panning, every later pass was CACHE_HIT (last-probe TTL
+      // said covered), and those stations showed "pending" for ~90s until
+      // an unrelated pass swept them in. The queue serializes passes
+      // anyway, and _maxReadingsPerPass bounds the cost, so running the
+      // readings is always worth it. Generation still guards the pushes
+      // (an old pass must not push to the screen).
+      bool wasSuperseded = superseded();
+      await _refreshReadings(apiKey, bounds, superseded,
+          onBatch: push, pushBatches: !wasSuperseded);
+      // passComplete only matters for the screen's overlay lifecycle: a
+      // superseded pass's overlay was already cleared by the newer fetch,
+      // so skip the terminal push for it (and never push stale bounds).
+      if (!wasSuperseded && !superseded()) push(passComplete: true);
     } catch (e) {
       LoggingService.error('WU PWS background pass failed', e);
     }
@@ -522,6 +530,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     LatLngBounds bounds,
     bool Function() superseded, {
     void Function()? onBatch,
+    bool pushBatches = true,
   }) async {
     final inBounds = discovered.values
         .where((s) =>
@@ -540,14 +549,10 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     });
 
     for (final station in needsReading) {
-      if (superseded()) {
-        LoggingService.structured('WU_PWS_ABORTED', {
-          'stage': 'readings',
-          'readings_done': needsReading.indexOf(station),
-          'readings_total': needsReading.length,
-        });
-        return;
-      }
+      // No generation check here on purpose: readings are not cancelled by
+      // panning (see _backgroundPass). Freshly probed stations need their
+      // readings regardless of which viewport triggered the pass, and the
+      // queue serializes passes so cost is bounded.
       await _throttle();
       final stopwatch = Stopwatch()..start();
       try {
@@ -612,9 +617,10 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
           'duration_ms': stopwatch.elapsedMilliseconds,
         });
         // Push the refined view after each reading so wind trails markers
-        // by seconds, not by the whole pass. The batch callback is
-        // generation-guarded in the caller.
-        if (!superseded()) onBatch?.call();
+        // by seconds, not by the whole pass. A superseded pass must not
+        // push: its bounds are the old viewport, and the screen would
+        // momentarily show the previous area's station list.
+        if (pushBatches && !superseded()) onBatch?.call();
       } on TimeoutException {
         LoggingService.structured('WU_PWS_TIMEOUT', {
           'endpoint': 'observations_current',
