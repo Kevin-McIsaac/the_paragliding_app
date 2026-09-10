@@ -208,6 +208,14 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
       // readings is always worth it. Generation still guards the pushes
       // (an old pass must not push to the screen).
       bool wasSuperseded = superseded();
+      // Surface the wind refresh in the overlay: a stale-reading cache hit
+      // can spend 20-60s of rate limit (N readings at 2s each), and the
+      // screen should show that work, not just the probe. Only when this
+      // pass is current - a superseded pass's overlay slot is already
+      // owned by the newer fetch.
+      if (!wasSuperseded && _stationsNeedingReadings(bounds).isNotEmpty) {
+        onApiCallStart?.call();
+      }
       await _refreshReadings(apiKey, bounds, superseded,
           onBatch: push, pushBatches: !wasSuperseded);
       // passComplete only matters for the screen's overlay lifecycle: a
