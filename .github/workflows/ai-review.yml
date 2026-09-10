@@ -33,10 +33,15 @@ jobs:
         env:
           # Route the CLI's Anthropic-protocol calls at Z.ai.
           ANTHROPIC_BASE_URL: https://api.z.ai/api/anthropic
-          ANTHROPIC_MODEL: glm-5.3-flash
-          ANTHROPIC_DEFAULT_SONNET_MODEL: glm-5.3-flash
-          ANTHROPIC_DEFAULT_OPUS_MODEL: glm-5.3-flash
-          ANTHROPIC_DEFAULT_HAIKU_MODEL: glm-5.3-flash
+          # Model names as Z.ai's official Claude Code setup documents them
+          # (capitalised); the SDK maps all Claude model slots to GLM.
+          ANTHROPIC_MODEL: GLM-5.3-Flash
+          ANTHROPIC_DEFAULT_SONNET_MODEL: GLM-5.3-Flash
+          ANTHROPIC_DEFAULT_OPUS_MODEL: GLM-5.3-Flash
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: GLM-5.3-Flash
+          # Long timeout: Z.ai documents 3000000 for coding-plan keys; the
+          # default timed out mid-review (is_error with empty modelUsage).
+          API_TIMEOUT_MS: '3000000'
         with:
           anthropic_api_key: ${{ secrets.ZHIPU_API_KEY }}
           prompt: |
