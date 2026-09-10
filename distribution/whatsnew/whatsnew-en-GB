@@ -1,5 +1,5 @@
-• Internal build fix: Weather Underground PWS stations now appear on the
-  nearby-sites map - the previous build was missing the key that powers
-  that layer, so no stations were shown
-
-(End of file - 3 lines)
+• Map improvements: wind stations appear faster when moving around the
+  map, and a loading indicator now shows while wind speed and direction
+  are being fetched
+• Wind data from Weather Underground stations fills in reliably when
+  browsing between areas
