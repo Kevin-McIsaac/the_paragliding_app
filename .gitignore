@@ -25,3 +25,6 @@ upload-cert*.pem
 
 # Local dev fixtures (real IGC tracks) and desktop app state - never commit
 dev_data/
+
+# DSH harness state (per-developer skill symlinks into .claude/skills/)
+.dsh/
