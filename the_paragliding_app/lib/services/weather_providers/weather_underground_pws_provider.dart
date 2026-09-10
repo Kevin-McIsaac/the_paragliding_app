@@ -111,6 +111,14 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
   /// rate limit.
   int _generation = 0;
 
+  /// Passes enqueued but not yet running. A superseded pass abandons its
+  /// remaining readings only when one of these exists - the newer pass will
+  /// re-serve the area with its own probe/readings. Without this counter
+  /// Option C's always-run readings block a queued probe behind up to 20s
+  /// of work for a viewport the user has already left (seen live 2026-09-10:
+  /// a 17s pan-to-probe delay).
+  int _pendingPasses = 0;
+
   @override
   Future<List<WeatherStation>> fetchStations(
     LatLngBounds bounds, {
@@ -148,6 +156,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     required int generation,
   }) {
     final previous = _fetchQueue ?? Future.value();
+    _pendingPasses++;
     final task = previous
         .catchError((_) {})
         .then((_) => _backgroundPass(
@@ -156,7 +165,8 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
               onApiCallStart: onApiCallStart,
               onStationsUpdated: onStationsUpdated,
               generation: generation,
-            ));
+            ))
+        .whenComplete(() => _pendingPasses--);
     _fetchQueue = task;
   }
 
@@ -557,10 +567,20 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     });
 
     for (final station in needsReading) {
-      // No generation check here on purpose: readings are not cancelled by
-      // panning (see _backgroundPass). Freshly probed stations need their
-      // readings regardless of which viewport triggered the pass, and the
-      // queue serializes passes so cost is bounded.
+      // Yield to a newer queued pass: a superseded pass must not block the
+      // current viewport's probe behind 20s of readings for an abandoned
+      // area - the queued pass re-probes and re-reads. When nothing is
+      // queued (e.g. the user navigated away entirely) readings still
+      // complete: freshly probed stations need them and nobody else will
+      // fetch them (the Option C fix).
+      if (superseded() && _pendingPasses > 0) {
+        LoggingService.structured('WU_PWS_READINGS_YIELDED', {
+          'readings_done': needsReading.indexOf(station),
+          'readings_total': needsReading.length,
+          'pending_passes': _pendingPasses,
+        });
+        return;
+      }
       await _throttle();
       final stopwatch = Stopwatch()..start();
       try {
