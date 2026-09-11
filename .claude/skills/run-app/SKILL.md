@@ -17,10 +17,13 @@ implementation, so 3D screens show a "3D Map Not Available" placeholder on deskt
 
 ## 2. Start it
 
-> **Agent shells don't inherit the interactive environment.** `flutter` is not on
-> PATH in an agent shell (it lives at `~/flutter/bin`), and the sandbox makes
-> `~/.config` read-only so flutter tools die with
-> `FileSystemException: ... ~/.config/flutter` before doing anything.
+> **Agent shells don't inherit the interactive environment.** Neither `flutter`
+> (`~/flutter/bin`) nor the current `adb` (`~/android-sdk/platform-tools`) is on PATH in
+> an agent shell, and the sandbox makes `$HOME` read-only, so flutter tools die with
+> `FileSystemException` against **`~/.config/flutter`** (analytics/network config) or
+> against **`~/.dart-tool`** (`dart-flutter-telemetry-session.json`). They fail
+> separately, and it is the second one that stops `flutter devices` before it lists
+> anything.
 >
 > **The PATH gap is NOT fixed by turning the sandbox off** - it is a shell
 > environment issue, not a sandbox issue. Prefix every `bin/dev_*.sh` call
@@ -28,11 +31,48 @@ implementation, so 3D screens show a "3D Map Not Available" placeholder on deskt
 > fails with `setsid: failed to execute flutter: No such file or directory`):
 >
 > ```bash
-> export PATH="$HOME/flutter/bin:$PATH" XDG_CONFIG_HOME=/tmp/flutter-config XDG_DATA_HOME=/tmp/flutter-data
+> export PATH="$HOME/flutter/bin:$HOME/android-sdk/platform-tools:$PATH" \
+>        ANDROID_HOME="$HOME/android-sdk" ANDROID_SDK_ROOT="$HOME/android-sdk" \
+>        XDG_CONFIG_HOME=/tmp/flutter-config XDG_DATA_HOME=/tmp/flutter-data
 > bin/dev_run.sh --background
 > ```
 >
+> **Keep `platform-tools` ahead of `/usr/bin`.** The system package at `/usr/bin/adb` is
+> Debian's **29.0.6**, `apt` has no newer candidate for it, and it predates the `mdns`
+> subcommand — so every wireless-debugging command below dies with
+> `adb: unknown command mdns`. `~/.bashrc` already prepends platform-tools, but agent
+> shells are non-interactive `bash -c` and never read it, which is why the export is not
+> optional here (verified 2026-09-12: `~/android-sdk/platform-tools/adb` is **37.0.0**).
+>
+> **There are two `adb`s, and the old one is not fixable — don't try.** `/usr/bin/adb` is
+> Debian's `android-sdk-platform-tools` (apt-installed 2026-04-08, binary built 2023);
+> `~/android-sdk` is Google's SDK, the one Flutter uses, updatable with
+> `cmdline-tools/latest/bin/sdkmanager`. All three "obvious" fixes fail or hurt: agent
+> shells have no working `sudo` (the sandbox sets `no new privileges`), `/usr/local/bin` is
+> a read-only mount owned by `nobody` so the symlink dies with `Permission denied`, and
+> removing the Debian package drags `sqlite3`, `graphviz` and the USB udev rules out with
+> it (see `docs/setup/WIRELESS_ADB_SETUP.md`). PATH order is the entire fix.
+>
 > The same export line is all a sandboxed run needs (plain analyze/test only).
+>
+> **`/tmp` does not persist between agent Bash calls, so never use it as `$HOME`.**
+> `XDG_CONFIG_HOME=/tmp/...` is safe because it is re-created inside the one call that
+> uses it, but a `/tmp`-based `$HOME` is gone by the next call and adb then fails with
+> `Cannot mkdir '/tmp/<name>/.android': No such file or directory` — which reads like a
+> broken SDK, not a vanished directory. When `flutter devices` needs a writable `$HOME`,
+> point it at a workspace-local one and carry adb's key over:
+>
+> ```bash
+> REAL="$HOME"
+> HDIR="$PWD/dev_data/flutter-home"          # inside the gitignored dev_data/
+> mkdir -p "$HDIR/.android" && cp -a "$REAL/.android/." "$HDIR/.android/"
+> export HOME="$HDIR"
+> export PATH="$REAL/flutter/bin:$REAL/android-sdk/platform-tools:$PATH"
+> export ANDROID_HOME="$REAL/android-sdk"
+> ```
+>
+> That is what makes `flutter devices` list a paired phone under a `workspace-write`
+> sandbox (verified 2026-09-12).
 
 > **Run every `bin/dev_run.sh` with the sandbox disabled** (`dangerouslyDisableSandbox:
 > true`). This is not an adb-only rule — it applies to the plain desktop run too. The
@@ -40,6 +80,13 @@ implementation, so 3D screens show a "3D Map Not Available" placeholder on deskt
 > the failure reads as a missing display or a missing phone rather than as a permissions
 > problem, so it gets misdiagnosed every time. Same for `bin/dev_reload.sh`,
 > `bin/dev_logs.sh`, `bin/dev_screenshot.sh`, and any `adb` command.
+>
+> **Scope: this section is about Claude Code's bubblewrap sandbox.** It does not describe
+> DSH's `workspace-write` policy, which does **not** block the LAN — verified 2026-09-12,
+> when `adb mdns services`, `adb pair`, `adb connect`, `adb devices -l` and
+> `flutter devices` all succeeded against the Pixel with the sandbox on. Try a sandboxed
+> call before escalating for permission; a pre-emptive escalation interrupts the user for
+> a grant that is usually unnecessary. `/sandbox` manages the allowlist.
 >
 > | you see | it is | do |
 > |---|---|---|
@@ -301,7 +348,8 @@ adb -s "$DEV" shell input keyevent KEYCODE_BACK    # 4=back, 3=home, 111=escape
 adb -s "$DEV" exec-out screencap -p > dev_data/screenshot.png
 ```
 
-Needs the sandbox off, like everything else that reaches the phone.
+Under Claude Code this needs the sandbox off, like everything else that reaches the phone;
+under DSH it works as-is — see the scoping note at the end of the wireless section.
 
 - **Coordinates are device pixels, and adb will not convert them for you** — unlike
   `dev_input.sh`. The Pixel 9 is 1080x2424 px at dpr 2.625, so a widget at 200dp from the
@@ -323,9 +371,10 @@ Needs the sandbox off, like everything else that reaches the phone.
 
 ```bash
 # On the phone: Settings > System > Developer options > Wireless debugging
-adb pair <ip>:<pairing-port> <6-digit-code>   # "Pair device with pairing code" dialog
-adb connect <ip>:<connect-port>               # DIFFERENT port, on the main screen
-flutter devices                               # confirm, then use the id with -d
+ADB="$HOME/android-sdk/platform-tools/adb"       # bare `adb` may be the 29.0.6 system one
+"$ADB" pair <ip>:<pairing-port> <6-digit-code>   # "Pair device with pairing code" dialog
+"$ADB" connect <ip>:<connect-port>               # DIFFERENT port, on the main screen
+flutter devices                                  # confirm, then use the id with -d
 ```
 
 The pairing port and the connect port are different — mixing them up is the usual failure.
@@ -333,46 +382,81 @@ Pairing is permanent; re-run only `adb connect` in later sessions. A stale pairi
 leaves its port listening but dead, which surfaces as `error: protocol fault (couldn't read
 status message)` — reopen the dialog for a fresh port and code.
 
+**A third case looks like the second and is not: `failed to connect` while mdns lists the
+phone and its port is open means the phone is not paired with *this host's* key.** Re-pair,
+taking both addresses from mdns in the same shell:
+
+```bash
+ADB="$HOME/android-sdk/platform-tools/adb"       # NOT bare adb — see the export note in §2
+PAIR=$("$ADB" mdns services | awk '/_adb-tls-pairing/{print $NF}')
+CONN=$("$ADB" mdns services | awk '/_adb-tls-connect/{print $NF}')
+"$ADB" pair "$PAIR" <6-digit-code>   # code from the "Pair device with pairing code" dialog
+"$ADB" connect "$CONN"
+```
+
+Observed exactly this on 2026-09-12: `adb connect 192.168.86.144:44457` failed repeatedly
+with a *correct* address while the port accepted TCP and mdns advertised it; `adb pair`
+succeeded and the very next `connect` worked. Check pairing before hunting for a port typo.
+The pairing port and code both change whenever the dialog is reopened and the code expires
+in ~1-2 minutes, so discover the port immediately before pairing.
+
 **`adb mdns services` works from a Crostini container** and is the fastest way to find the
 phone after DHCP moves it — it reports the live `IP:port` for both services directly,
 rather than reading a possibly-stale IP off the phone's dialog:
 
 ```bash
-adb mdns services | awk '/_adb-tls-connect/{print $NF}'   # connect port
-adb mdns services | awk '/_adb-tls-pairing/{print $NF}'   # pairing port - only while the dialog is open
+ADB="$HOME/android-sdk/platform-tools/adb"   # bare `adb` is Debian's 29.0.6: "unknown command mdns"
+"$ADB" mdns services | awk '/_adb-tls-connect/{print $NF}'   # connect port
+"$ADB" mdns services | awk '/_adb-tls-pairing/{print $NF}'   # pairing port - only while the dialog is open
 ```
 
 An earlier version of this note claimed it "always returns empty" on the theory that
 multicast doesn't cross the Crostini NAT — that was wrong, verified 2026-08-11, and cost
 real debugging time before someone just tried it.
 
+**It is also flaky, which is a different thing from absent.** On 2026-09-12 it returned an
+empty list on 4 of 6 calls, twice consecutively, and found the phone on the next attempt.
+Retry two or three times before concluding anything — one empty result proves nothing, and
+neither does a `connect` failure that follows it.
+
 ### Run `adb devices -l` before connecting anything
 
 The paired TLS transport reconnects by itself, so the phone is usually already there:
 
 ```
-adb-52110DLAQ001UT-hkZkFs._adb-tls-connect._tcp  device product:tokay model:Pixel_9
+192.168.86.144:44457   device product:tokay model:Pixel_9 device:tokay transport_id:1
 ```
 
-No `adb connect` needed. Two things that look like an absent phone and are not:
+No `adb connect` needed. **Trust no address recorded in this file or in the setup doc** — the
+phone is on DHCP and moves (it was `192.168.86.99` on 2026-08-08 and `192.168.86.144` on
+2026-09-12); get the live one from `adb mdns services`. Three things that look like an
+absent phone and are not:
 
 - **`flutter devices` listing only Linux and Chrome.** It can miss a transport `adb` sees.
   Check both before concluding the phone is unplugged.
 - **A failing `adb connect`.** On 2026-08-08 `adb connect 192.168.86.99:5555` returned
   `No route to host` while `adb devices -l` showed the phone online on the next line, and
   the app deployed to it fine.
+- **`failed to connect` while mdns advertises it, on an open port.** The host is not paired;
+  run `adb pair` — see "A third case looks like the second" above.
 
-### adb over the LAN needs the sandbox off
+### adb over the LAN needs the sandbox off — under Claude Code only
 
-Agent Bash commands run inside a **bubblewrap sandbox** whose network allowlist covers
-pub.dev, GitHub and the app's APIs — **not the phone's LAN address**. Anything that has to
-reach the phone over Wi-Fi fails there with:
+Under Claude Code, agent Bash commands run inside a **bubblewrap sandbox** whose network
+allowlist covers pub.dev, GitHub and the app's APIs — **not the phone's LAN address**.
+Anything that has to reach the phone over Wi-Fi fails there with:
 
 ```
 failed to connect to '192.168.86.99:5555': Network is unreachable
 ```
 
-`Network is unreachable` is the sandbox. `No route to host` is the network. Re-run with the
+`Network is unreachable` is that sandbox. `No route to host` is the network. Re-run with the
 sandbox disabled — that includes `bin/dev_run.sh -d "<device>"`, which talks to the phone
 right through the build-install-attach cycle, not only at connect time. `/sandbox` manages
 the allowlist if this becomes routine.
+
+**Under DSH this section does not apply** (verified 2026-09-12): with the `workspace-write`
+sandbox on, `adb mdns services`, `adb pair 192.168.86.144:39267 <code>`,
+`adb connect 192.168.86.144:44457`, `adb devices -l` and `flutter devices` all worked. The
+commands to disable the sandbox are in §2 with the same scoping note — read it before
+escalating, and prefer one sandboxed attempt over an approval prompt.
