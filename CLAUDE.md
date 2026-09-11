@@ -37,7 +37,8 @@ single source of truth - do not duplicate it here.
 ## 🤖 Agent environment facts (read before running anything)
 
 These cost real debugging time when learned by trial and error (2026-09-05,
-WU PWS session - three failed app starts and one wrong-directory analyze run):
+WU PWS session - three failed app starts and one wrong-directory analyze run;
+2026-09-12, wireless-adb session - the two `adb`s and the missing sudo):
 
 1. **Read the relevant skill FIRST, by path, before running its commands.**
    `.claude/skills/` files are not auto-loaded. Non-negotiable triggers:
@@ -49,19 +50,36 @@ WU PWS session - three failed app starts and one wrong-directory analyze run):
    file deliberately does not duplicate.
 
 2. **Agent shells do not inherit the interactive environment.**
-   `flutter` is NOT on PATH (it lives at `~/flutter/bin`), and the sandbox
-   makes `~/.config` read-only (flutter tools die with
-   `FileSystemException: ... /home/<user>/.config/flutter`). For plain
+   Neither `flutter` (it lives at `~/flutter/bin`) nor the current `adb`
+   (`~/android-sdk/platform-tools`) is on PATH. The `/usr/bin/adb` they fall
+   back to is Debian's 29.0.6, which predates `adb mdns` and breaks wireless
+   debugging with `adb: unknown command mdns`. The sandbox also makes `$HOME`
+   read-only, so flutter tools die with `FileSystemException` against
+   `.../.config/flutter` **or** `.../.dart-tool` - the second is what stops
+   `flutter devices` before it lists anything. For plain
    analyze/test runs:
    ```bash
-   export PATH="$HOME/flutter/bin:$PATH" \
+   export PATH="$HOME/flutter/bin:$HOME/android-sdk/platform-tools:$PATH" \
+          ANDROID_HOME="$HOME/android-sdk" ANDROID_SDK_ROOT="$HOME/android-sdk" \
           XDG_CONFIG_HOME=/tmp/flutter-config XDG_DATA_HOME=/tmp/flutter-data
    ```
-   For `bin/dev_*.sh` and `adb`, do NOT do this piecemeal - the run-app skill
-   requires those with the sandbox off entirely, which fixes PATH and config
-   in one move.
+   **This export is needed whether or not the sandbox is off** - the PATH gap
+   is a shell-environment issue, not a sandbox one (verified 2026-09-05:
+   sandbox off with no export still fails with
+   `setsid: failed to execute flutter`). The run-app skill carries the export,
+   the `bin/dev_*.sh` sandbox guidance, and the `flutter devices` `$HOME`
+   recipe.
 
-3. **Working directory**: `flutter analyze` / `flutter test` run from
+3. **There is no working `sudo`, and the system directories are read-only.**
+   `sudo` dies with `The "no new privileges" flag is set` (and
+   `/etc/sudo.conf` is owned by uid 65534), and `/usr/local/bin` is a
+   read-only mount owned by `nobody` - so no agent can install, remove or
+   symlink anything system-wide, not even with escalated file access. Anything
+   needing root (apt, a symlink in `/usr/local/bin`) has to be run by the
+   human in their own terminal. Do not spend a cycle attempting it, and check
+   the artifact rather than assuming a system-level fix landed.
+
+4. **Working directory**: `flutter analyze` / `flutter test` run from
    `the_paragliding_app/`, not the repo root. `bin/dev_*.sh` run from the repo
    root. Getting this wrong can silently analyze/build the wrong tree (a
    root-level run once reported "39645 issues" from build artifacts).
