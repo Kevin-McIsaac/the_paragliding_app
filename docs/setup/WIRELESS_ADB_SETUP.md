@@ -68,16 +68,32 @@ unzip platform-tools-latest-linux.zip
 > **Check the *version*, not just that `which adb` answered.** Debian also ships an adb at
 > `/usr/bin/adb`, and in this container it is **29.0.6** — old enough to predate
 > `adb mdns`, which fails as `adb: unknown command mdns`. `apt` has no newer candidate, so
-> the fix is PATH order, never an upgrade. The current platform-tools build is **37.0.0**:
+> the fix is PATH order or a symlink, never an upgrade. The current platform-tools build is
+> **37.0.0**:
 >
 > ```bash
 > /home/kmcisaac/android-sdk/platform-tools/adb version   # want 1.0.41 / 37.x, not 29.0.6
 > ```
 >
 > In an **interactive** shell `~/.bashrc` already prepends platform-tools, so bare `adb` is
-> correct. Agent shells are non-interactive `bash -c` and never read `.bashrc`, so they get
-> the 29.0.6 one unless they export the path themselves (the `run-app` skill carries that
-> export).
+> correct. Agent shells are non-interactive `bash -c` and never read `.bashrc`, so they
+> would otherwise get the 29.0.6 one (the `run-app` skill carries the export for that case).
+>
+> **On this machine the gap is closed at the system level** (2026-09-12) by a symlink into
+> `/usr/local/bin`, which precedes `/usr/bin` on PATH:
+>
+> ```bash
+> sudo ln -sf /home/kmcisaac/android-sdk/platform-tools/adb /usr/local/bin/adb
+> command -v adb && adb version        # expect /usr/local/bin/adb, 37.x
+> ```
+>
+> Afterwards bare `adb` is 37.0.0 in **every** shell, non-interactive ones included, so the
+> export in the `run-app` skill is belt-and-braces rather than load-bearing. An **agent
+> shell cannot create it** (no working `sudo` — see `CLAUDE.md` item 3), so this is a
+> one-time job for the human in their own terminal; re-run it if `command -v adb` ever
+> points at `/usr/bin` again. The link survives `sdkmanager` updates of platform-tools but
+> **dangles if `~/android-sdk/platform-tools` is deleted**, and
+> `sudo rm /usr/local/bin/adb` reverses it.
 >
 > **Don't "tidy up" by removing the Debian one.** `apt remove android-sdk-platform-tools`
 > removes only the meta package — `adb` is an automatic dependency and stays, still

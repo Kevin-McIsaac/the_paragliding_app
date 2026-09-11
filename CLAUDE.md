@@ -50,11 +50,13 @@ WU PWS session - three failed app starts and one wrong-directory analyze run;
    file deliberately does not duplicate.
 
 2. **Agent shells do not inherit the interactive environment.**
-   Neither `flutter` (it lives at `~/flutter/bin`) nor the current `adb`
-   (`~/android-sdk/platform-tools`) is on PATH. The `/usr/bin/adb` they fall
-   back to is Debian's 29.0.6, which predates `adb mdns` and breaks wireless
-   debugging with `adb: unknown command mdns`. The sandbox also makes `$HOME`
-   read-only, so flutter tools die with `FileSystemException` against
+   `flutter` is not on PATH (it lives at `~/flutter/bin`). `adb` is only
+   because of a machine-local symlink, `/usr/local/bin/adb ->
+   ~/android-sdk/platform-tools/adb` (installed 2026-09-12; see the setup
+   guide); without it the fallback is Debian's `/usr/bin/adb` 29.0.6, which
+   predates `adb mdns` and breaks wireless debugging with
+   `adb: unknown command mdns`. The sandbox also makes `$HOME` read-only, so
+   flutter tools die with `FileSystemException` against
    `.../.config/flutter` **or** `.../.dart-tool` - the second is what stops
    `flutter devices` before it lists anything. For plain
    analyze/test runs:
@@ -70,14 +72,17 @@ WU PWS session - three failed app starts and one wrong-directory analyze run;
    the `bin/dev_*.sh` sandbox guidance, and the `flutter devices` `$HOME`
    recipe.
 
-3. **There is no working `sudo`, and the system directories are read-only.**
-   `sudo` dies with `The "no new privileges" flag is set` (and
-   `/etc/sudo.conf` is owned by uid 65534), and `/usr/local/bin` is a
-   read-only mount owned by `nobody` - so no agent can install, remove or
-   symlink anything system-wide, not even with escalated file access. Anything
-   needing root (apt, a symlink in `/usr/local/bin`) has to be run by the
-   human in their own terminal. Do not spend a cycle attempting it, and check
-   the artifact rather than assuming a system-level fix landed.
+3. **An agent shell has no working `sudo` - system changes are the human's job.**
+   `sudo` dies with `The "no new privileges" flag is set`, so nothing can be
+   installed, removed or symlinked system-wide from an agent shell, not even
+   with escalated file access. **The ownership and read-only errors it reports
+   are sandbox artifacts, not your real filesystem**: under the sandbox's user
+   namespace `/usr/local/bin` and `/etc/sudo.conf` appear as `nobody`/uid 65534,
+   and writes to them fail with `Read-only file system` or `Permission denied`
+   even though a real root shell writes them fine - the adb symlink in item 2
+   was installed exactly that way. So ask the human to run the command in their
+   own terminal rather than escalating repeatedly, and verify the artifact
+   afterwards rather than assuming the system-level fix landed.
 
 4. **Working directory**: `flutter analyze` / `flutter test` run from
    `the_paragliding_app/`, not the repo root. `bin/dev_*.sh` run from the repo
