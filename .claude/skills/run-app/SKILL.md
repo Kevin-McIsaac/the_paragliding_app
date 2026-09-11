@@ -37,21 +37,24 @@ implementation, so 3D screens show a "3D Map Not Available" placeholder on deskt
 > bin/dev_run.sh --background
 > ```
 >
-> **Keep `platform-tools` ahead of `/usr/bin`.** The system package at `/usr/bin/adb` is
-> Debian's **29.0.6**, `apt` has no newer candidate for it, and it predates the `mdns`
-> subcommand — so every wireless-debugging command below dies with
-> `adb: unknown command mdns`. `~/.bashrc` already prepends platform-tools, but agent
-> shells are non-interactive `bash -c` and never read it, which is why the export is not
-> optional here (verified 2026-09-12: `~/android-sdk/platform-tools/adb` is **37.0.0**).
+> **`adb` must be the platform-tools one (37.0.0), not `/usr/bin`.** The system package at
+> `/usr/bin/adb` is Debian's **29.0.6**, `apt` has no newer candidate for it, and it
+> predates the `mdns` subcommand — so wireless-debugging commands die with
+> `adb: unknown command mdns`. `~/.bashrc` prepends platform-tools for interactive shells,
+> but agent shells are non-interactive `bash -c` and never read it, which is why the export
+> above spells the path out. **This machine also has the system-level fix** (installed
+> 2026-09-12): `/usr/local/bin/adb -> ~/android-sdk/platform-tools/adb`, and
+> `/usr/local/bin` precedes `/usr/bin` on PATH, so bare `adb` is 37.0.0 in *every* shell —
+> verified with no export set. See `docs/setup/WIRELESS_ADB_SETUP.md` to reinstall it.
 >
-> **There are two `adb`s, and the old one is not fixable — don't try.** `/usr/bin/adb` is
+> **There are two `adb`s, and the Debian one is not fixable — don't try.** `/usr/bin/adb` is
 > Debian's `android-sdk-platform-tools` (apt-installed 2026-04-08, binary built 2023);
 > `~/android-sdk` is Google's SDK, the one Flutter uses, updatable with
-> `cmdline-tools/latest/bin/sdkmanager`. All three "obvious" fixes fail or hurt: agent
-> shells have no working `sudo` (the sandbox sets `no new privileges`), `/usr/local/bin` is
-> a read-only mount owned by `nobody` so the symlink dies with `Permission denied`, and
-> removing the Debian package drags `sqlite3`, `graphviz` and the USB udev rules out with
-> it (see `docs/setup/WIRELESS_ADB_SETUP.md`). PATH order is the entire fix.
+> `cmdline-tools/latest/bin/sdkmanager`. When bare `adb` misbehaves the fix is that symlink —
+> but an **agent shell cannot create it** (no working `sudo`; the sandbox sets
+> `no new privileges`), so ask the human instead of burning a cycle on it. Do **not** "fix"
+> the Debian one by removing it: `apt remove` drags `sqlite3`, `graphviz` and the USB udev
+> rules out with it (see `docs/setup/WIRELESS_ADB_SETUP.md`).
 >
 > The same export line is all a sandboxed run needs (plain analyze/test only).
 >
