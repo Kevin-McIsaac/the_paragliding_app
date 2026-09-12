@@ -22,6 +22,7 @@ class MapFilterDialog extends StatefulWidget {
   final bool ffvlEnabled;
   final bool bomEnabled;
   final bool wundergroundPwsEnabled;
+  final bool holfuyEnabled;
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
@@ -37,6 +38,7 @@ class MapFilterDialog extends StatefulWidget {
     bool ffvlEnabled,
     bool bomEnabled,
     bool wundergroundPwsEnabled,
+    bool holfuyEnabled,
     Map<String, bool> types,
     Map<String, bool> classes,
     double maxAltitudeFt,
@@ -55,6 +57,7 @@ class MapFilterDialog extends StatefulWidget {
     required this.ffvlEnabled,
     required this.bomEnabled,
     required this.wundergroundPwsEnabled,
+    required this.holfuyEnabled,
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
@@ -77,6 +80,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
   late bool _ffvlEnabled;
   late bool _bomEnabled;
   late bool _wundergroundPwsEnabled;
+  late bool _holfuyEnabled;
   late Map<String, bool> _airspaceTypes;
   late Map<String, bool> _icaoClasses;
   late double _maxAltitudeFt;
@@ -123,6 +127,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     _ffvlEnabled = widget.ffvlEnabled;
     _bomEnabled = widget.bomEnabled;
     _wundergroundPwsEnabled = widget.wundergroundPwsEnabled;
+    _holfuyEnabled = widget.holfuyEnabled;
     _airspaceTypes = Map<String, bool>.from(widget.airspaceTypes);
     _icaoClasses = Map<String, bool>.from(widget.icaoClasses);
     _maxAltitudeFt = widget.maxAltitudeFt;
@@ -539,6 +544,18 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.weatherUndergroundPws).description,
                 onChanged: _weatherStationsEnabled ? (value) => setState(() {
                   _wundergroundPwsEnabled = value ?? true;
+                  _applyFiltersImmediately();
+                }) : null,
+              ),
+              const SizedBox(height: 2),
+              // Holfuy provider (global; positions from the published catalogue,
+              // live wind fetched one station at a time)
+              _buildProviderCheckbox(
+                value: _holfuyEnabled,
+                label: 'Holfuy',
+                subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.holfuy).description,
+                onChanged: _weatherStationsEnabled ? (value) => setState(() {
+                  _holfuyEnabled = value ?? true;
                   _applyFiltersImmediately();
                 }) : null,
               ),
@@ -1130,7 +1147,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
       'clipping_enabled': _clippingEnabled,
     });
 
-    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _weatherStationsEnabled, _metarEnabled, _nwsEnabled, _pioupiouEnabled, _ffvlEnabled, _bomEnabled, _wundergroundPwsEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
+    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _weatherStationsEnabled, _metarEnabled, _nwsEnabled, _pioupiouEnabled, _ffvlEnabled, _bomEnabled, _wundergroundPwsEnabled, _holfuyEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
   }
 
   /// Build a provider checkbox widget

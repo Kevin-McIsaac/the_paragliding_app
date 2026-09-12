@@ -59,6 +59,19 @@ class MapConstants {
   // Drop stations whose last update is older than this (dead stations)
   static const Duration wuStaleObservationCutoff = Duration(hours: 2);
 
+  // Holfuy-specific caching (a published station catalogue, readings on demand)
+  static const Duration holfuyStationListCacheTTL = Duration(hours: 24); // Stations don't move
+  static const Duration holfuyReadingCacheTTL = Duration(minutes: 5); // Holfuy updates ~10 min
+  // Holfuy's page endpoint is one request per station and its own JS points
+  // bulk users at an API capped at three stations. Readings are serialized and
+  // paced so a burst of taps never looks like the bulk use it refuses.
+  static const Duration holfuyMinRequestInterval = Duration(seconds: 1);
+  // How often the app asks whether the published station file has moved. The
+  // file is regenerated only by a manual catalogue run, so this is a cheap HEAD
+  // that almost always answers "unchanged".
+  static const Duration holfuyStationFileMaxAge = Duration(days: 30);
+  static const Duration holfuyStationFileCheckInterval = Duration(days: 7);
+
   // Map UI constants
   static const double mapPadding = 0.005;
 

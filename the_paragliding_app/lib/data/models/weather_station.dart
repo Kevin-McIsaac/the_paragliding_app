@@ -63,8 +63,14 @@ class WeatherStation {
     );
   }
 
-  /// Infer observation type from station ID pattern
-  /// Different station ID prefixes indicate different types of observation stations
+  /// Infer observation type from station ID pattern.
+  ///
+  /// This is an **NWS id-pattern heuristic** - its only caller is the NWS
+  /// provider - and must not be read as a general rule about a station from its
+  /// id. The numeric branch in particular says "Marine Buoy", which is right
+  /// for an NWS numeric id and wrong for every Holfuy station (all numeric);
+  /// providers whose ids do not follow these conventions set `observationType`
+  /// explicitly instead, as the Holfuy catalogue parser does.
   static String inferObservationType(String stationId) {
     if (stationId.startsWith('K') && stationId.length == 4) {
       return 'Airport (METAR)';

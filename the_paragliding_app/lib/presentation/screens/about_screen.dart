@@ -374,6 +374,12 @@ class _AboutScreenState extends State<AboutScreen> {
                       icon: Icons.home_mini,
                       text: 'Weather Underground PWS Contributors',
                     ),
+                    // Holfuy - station positions and names used with permission
+                    AppAttributionLink.compact(
+                      url: 'https://holfuy.com/',
+                      icon: Icons.paragliding,
+                      text: 'Holfuy wind stations',
+                    ),
                   ],
                 ),
               ),

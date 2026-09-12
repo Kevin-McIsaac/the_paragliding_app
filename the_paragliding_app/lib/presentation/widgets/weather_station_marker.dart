@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import '../../data/models/holfuy_reading.dart';
 import '../../data/models/weather_station.dart';
 import '../../data/models/weather_station_source.dart';
 import '../../data/models/wind_data.dart';
+import '../../services/weather_providers/holfuy_weather_provider.dart';
 import '../../services/weather_providers/weather_station_provider_registry.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -13,6 +15,11 @@ class WeatherStationMarker extends StatelessWidget {
   final double cautionWindSpeed;
   final VoidCallback? onTap;
 
+  /// Called when a reading fetched on demand should be reflected on the map.
+  /// Holfuy wind arrives only after a tap, so without this the marker would
+  /// stay blank behind the dialog that just loaded it.
+  final void Function(WindData wind)? onReadingLoaded;
+
   static const double markerSize = 40.0;
 
   const WeatherStationMarker({
@@ -21,6 +28,7 @@ class WeatherStationMarker extends StatelessWidget {
     required this.maxWindSpeed,
     required this.cautionWindSpeed,
     this.onTap,
+    this.onReadingLoaded,
   });
 
   /// Marker state helpers for WU PWS stations without wind:
@@ -33,6 +41,12 @@ class WeatherStationMarker extends StatelessWidget {
   static bool _isPendingStation(WeatherStation station) =>
       station.source == WeatherStationSource.weatherUndergroundPws &&
       station.observationType != 'WU PWS (no wind data)';
+
+  /// A Holfuy station whose reading has not been fetched yet. Its wind is not
+  /// missing - the app does not ask Holfuy until someone taps - so the marker
+  /// says "tap for wind" rather than claiming the station has no data.
+  static bool _isHolfuyUnread(WeatherStation station) =>
+      station.source == WeatherStationSource.holfuy && station.windData == null;
 
   @override
   Widget build(BuildContext context) {
@@ -54,6 +68,11 @@ class WeatherStationMarker extends StatelessWidget {
       // Only WU PWS loads wind in the background; every other provider's
       // data-less station simply has no data.
       tooltipText = '${station.name ?? station.id}\nWind loading…';
+    } else if (_isHolfuyUnread(station)) {
+      final altitude = station.elevation != null
+          ? '\n${station.elevation!.toStringAsFixed(0)}m'
+          : '';
+      tooltipText = '${station.name ?? station.id}$altitude\nTap for wind';
     } else {
       tooltipText = '${station.name ?? station.id}\nNo wind data';
     }
@@ -71,13 +90,18 @@ class WeatherStationMarker extends StatelessWidget {
         child: SizedBox(
           width: markerSize,
           height: markerSize,
-          child: CustomPaint(
-            painter: _WeatherStationPainter(
-              windData: station.windData,
-              pending: windData == null && _isPendingStation(station),
-              noData: windData == null && _isNoDataStation(station),
-            ),
-          ),
+          child: _isHolfuyUnread(station)
+              ? const _HolfuyUnreadMarker()
+              : CustomPaint(
+                  painter: _WeatherStationPainter(
+                    windData: station.windData,
+                    pending: windData == null && _isPendingStation(station),
+                    noData: windData == null && _isNoDataStation(station),
+                    accent: station.source == WeatherStationSource.holfuy
+                        ? _HolfuyUnreadMarker.discColor
+                        : null,
+                  ),
+                ),
         ),
       ),
     );
@@ -90,6 +114,45 @@ class WeatherStationMarker extends StatelessWidget {
         station: station,
         maxWindSpeed: maxWindSpeed,
         cautionWindSpeed: cautionWindSpeed,
+        onReadingLoaded: onReadingLoaded,
+      ),
+    );
+  }
+}
+
+/// A Holfuy station whose reading has not been asked for yet.
+///
+/// The weather-station ring is a 1.5 px grey circle, which disappears against
+/// the basemap and reads as "still loading" when the truth is "not requested".
+/// This is a filled violet disc with a white wind glyph instead: the one hue the
+/// map has left (green/orange/red are flyability, blue/cobalt are sites, amber
+/// is selection), so the station is findable and unmistakably a weather station.
+class _HolfuyUnreadMarker extends StatelessWidget {
+  /// Also used as the ring and barb colour once a reading arrives, so a Holfuy
+  /// station stays identifiable in both states.
+  static const Color discColor = Color(0xFF6A1B9A);
+
+  const _HolfuyUnreadMarker();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 22,
+        height: 22,
+        decoration: BoxDecoration(
+          color: discColor,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 1.5),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x66000000),
+              blurRadius: 3,
+              offset: Offset(0, 1),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.air, size: 12, color: Colors.white),
       ),
     );
   }
@@ -106,10 +169,15 @@ class _WeatherStationPainter extends CustomPainter {
   /// dashed, dimmed circle so it reads as "station exists, has no data".
   final bool noData;
 
+  /// Ring and barb colour. Defaults to the station grey; Holfuy passes its own
+  /// so its readings keep the source's identity.
+  final Color? accent;
+
   _WeatherStationPainter({
     required this.windData,
     this.pending = false,
     this.noData = false,
+    this.accent,
   });
 
   @override
@@ -157,7 +225,7 @@ class _WeatherStationPainter extends CustomPainter {
 
     // Draw circle outline only (no fill)
     final circlePaint = Paint()
-      ..color = Colors.grey[800]!
+      ..color = accent ?? Colors.grey[800]!
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
 
@@ -172,7 +240,7 @@ class _WeatherStationPainter extends CustomPainter {
 
   void _drawWindBarb(Canvas canvas, Offset center, double circleRadius, WindData windData) {
     final barbPaint = Paint()
-      ..color = Colors.grey[800]!
+      ..color = accent ?? Colors.grey[800]!
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5
       ..strokeCap = StrokeCap.round;
@@ -248,21 +316,73 @@ class _WeatherStationPainter extends CustomPainter {
   bool shouldRepaint(_WeatherStationPainter oldDelegate) {
     return oldDelegate.windData != windData ||
         oldDelegate.pending != pending ||
-        oldDelegate.noData != noData;
+        oldDelegate.noData != noData ||
+        oldDelegate.accent != accent;
   }
 }
 
-/// Dialog showing detailed weather station information
-class _WeatherStationDialog extends StatelessWidget {
+/// Dialog showing detailed weather station information.
+///
+/// For a Holfuy station this is where the wind is fetched, on demand - the only
+/// moment the app reads Holfuy for a reading. The dialog shows a loading state,
+/// then the reading, and reports it back so the marker behind it fills in too.
+class _WeatherStationDialog extends StatefulWidget {
   final WeatherStation station;
   final double maxWindSpeed;
   final double cautionWindSpeed;
+  final void Function(WindData wind)? onReadingLoaded;
 
   const _WeatherStationDialog({
     required this.station,
     required this.maxWindSpeed,
     required this.cautionWindSpeed,
+    this.onReadingLoaded,
   });
+
+  @override
+  State<_WeatherStationDialog> createState() => _WeatherStationDialogState();
+}
+
+class _WeatherStationDialogState extends State<_WeatherStationDialog> {
+  WindData? _windData;
+
+  /// The outcome of the on-tap read, so the dialog can say *why* there is no
+  /// wind instead of reporting every outcome as "could not load".
+  HolfuyReading? _result;
+  bool _loading = false;
+
+  WeatherStation get station => widget.station;
+
+  @override
+  void initState() {
+    super.initState();
+    _windData = station.windData;
+    // Holfuy is the one source whose wind is not already attached by the time
+    // the marker is drawn; asking for it here is the whole on-tap design.
+    if (_windData == null && station.source == WeatherStationSource.holfuy) {
+      _loadReading();
+    }
+  }
+
+  Future<void> _loadReading() async {
+    setState(() {
+      _loading = true;
+      _result = null;
+    });
+
+    final reading =
+        await HolfuyWeatherProvider.instance.requestReading(station.id);
+
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _result = reading;
+      _windData = reading.wind;
+    });
+
+    final wind = reading.wind;
+    if (wind != null) widget.onReadingLoaded?.call(wind);
+  }
 
   String _getTimeAgo(DateTime timestamp) {
     final now = DateTime.now();
@@ -279,7 +399,7 @@ class _WeatherStationDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final windData = station.windData;
+    final windData = _windData;
 
     return Dialog(
       backgroundColor: const Color(0xFF1E1E1E),
@@ -384,10 +504,30 @@ class _WeatherStationDialog extends StatelessWidget {
                     ],
                   ),
                 ),
+              ] else if (_loading) ...[
+                const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Loading wind from Holfuy…',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ] else if (_result?.status == HolfuyReadingStatus.offline) ...[
+                _buildOfflineNotice(_result!),
               ] else ...[
-                const Text(
-                  'No wind data available',
-                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                Text(
+                  station.source == WeatherStationSource.holfuy
+                      ? "Couldn't reach Holfuy"
+                      : 'No wind data available',
+                  style: const TextStyle(color: Colors.white54, fontSize: 13),
                 ),
               ],
               const SizedBox(height: 12),
@@ -397,6 +537,52 @@ class _WeatherStationDialog extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  /// The station is up and telling us why it is silent.
+  ///
+  /// This is information, not an error: Holfuy stations are frequently
+  /// solar-powered and go flat for days ("Battery is empty! Waiting for Sun...").
+  /// Reporting that as "could not load" turns a working station into an app
+  /// failure.
+  Widget _buildOfflineNotice(HolfuyReading reading) {
+    final reason = reading.offlineReason;
+    final lastUpdate = reading.lastUpdate;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Row(
+          children: [
+            Icon(Icons.cloud_off, size: 14, color: Colors.orangeAccent),
+            SizedBox(width: 6),
+            Text(
+              'Station offline',
+              style: TextStyle(
+                color: Colors.orangeAccent,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        if (reason != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            reason,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+        ],
+        if (lastUpdate != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Last update: $lastUpdate',
+            style: const TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+        ],
+      ],
     );
   }
 
@@ -427,7 +613,8 @@ class _WeatherStationDialog extends StatelessWidget {
     } else if (station.source == WeatherStationSource.pioupiou) {
       url = 'https://www.openwindmap.org/windbird-${station.id}';
     } else if ((station.source == WeatherStationSource.ffvl ||
-                station.source == WeatherStationSource.weatherUndergroundPws) &&
+                station.source == WeatherStationSource.weatherUndergroundPws ||
+                station.source == WeatherStationSource.holfuy) &&
                station.dataUrl != null) {
       url = station.dataUrl!;
     } else {

@@ -27,4 +27,14 @@ enum WeatherStationSource {
   /// Weather Underground personal weather stations (PWS) from api.weather.com
   /// Community stations worldwide, discovered via v3/location/near
   weatherUndergroundPws,
+
+  /// Holfuy (holfuy.com) paragliding wind stations
+  ///
+  /// Positions come from a station catalogue the federation publishes, because
+  /// Holfuy has no discovery endpoint of any kind. Readings are deliberately
+  /// *not* bulk-fetched: Holfuy's API is password-gated per station with a
+  /// ceiling of three, and it refuses bulk use of the page endpoint its own
+  /// monitor uses. Wind is fetched one station at a time, only when asked for -
+  /// see HolfuyWeatherProvider.
+  holfuy,
 }

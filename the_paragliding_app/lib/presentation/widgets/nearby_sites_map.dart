@@ -40,6 +40,10 @@ class NearbySitesMap extends BaseMapWidget {
   final bool forecastEnabled;
   final List<WeatherStation> weatherStations;
   final Map<String, WindData> stationWindData;
+
+  /// A station reading fetched on tap, to fold back into [stationWindData] so
+  /// the marker reflects the wind the dialog just loaded.
+  final void Function(String stationKey, WindData wind)? onStationReading;
   final bool weatherStationsEnabled;
   final int airspaceDataVersion; // Increment to trigger airspace reload
   final int sitesDataVersion; // Increment to trigger sites reload
@@ -65,6 +69,7 @@ class NearbySitesMap extends BaseMapWidget {
     this.forecastEnabled = true,
     this.weatherStations = const [],
     this.stationWindData = const {},
+    this.onStationReading,
     this.weatherStationsEnabled = true,
     this.airspaceDataVersion = 0,
     this.sitesDataVersion = 0,
@@ -443,6 +448,8 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
           station: stationWithWind,
           maxWindSpeed: widget.maxWindSpeed,
           cautionWindSpeed: widget.cautionWindSpeed,
+          onReadingLoaded: (wind) =>
+              widget.onStationReading?.call(station.key, wind),
         ),
       );
     }).toList();
