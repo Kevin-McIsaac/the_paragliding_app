@@ -652,6 +652,35 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     return ProviderProgressEvent.ignore;
   }
 
+  /// The site the map is focused on: the displayed site nearest [centre], or
+  /// null when none are shown.
+  ///
+  /// WU PWS discovery is point-based and returns only the 10 nearest stations,
+  /// so the probe has to be aimed at where the pilot is actually looking.
+  /// Aiming at the viewport centre instead can miss the stations at their own
+  /// launch - seen live 2026-09-12 at Quinns Beach Launch: the nearest station
+  /// (0.3 km) was in none of that probe's 10 results, while six stations
+  /// 1.4-3.7 km away were already known and made the viewport look covered.
+  @visibleForTesting
+  static LatLng? focusSiteFor(List<ParaglidingSite> sites, LatLng centre) {
+    if (sites.isEmpty) return null;
+    const distance = Distance();
+    LatLng? nearest;
+    double nearestKm = double.infinity;
+    for (final site in sites) {
+      final km = distance.as(
+        LengthUnit.Kilometer,
+        centre,
+        LatLng(site.latitude, site.longitude),
+      );
+      if (km < nearestKm) {
+        nearestKm = km;
+        nearest = LatLng(site.latitude, site.longitude);
+      }
+    }
+    return nearest;
+  }
+
   Future<void> _fetchWeatherStations() async {
     // Skip fetching if weather stations are disabled
     if (!_weatherStationsEnabled) {
@@ -688,15 +717,28 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       });
 
       try {
+        // Aim point-based discovery (WU PWS) at the site in view rather than
+        // the viewport centre, so the stations at that launch are the ones
+        // asked for. Null when no site is displayed - read from the map
+        // controller rather than the debounced bounds so it follows a pan.
+        final focusPoint = focusSiteFor(
+          _displayedSites,
+          _mapController.camera.center,
+        );
+
         // Log before fetching stations
         LoggingService.structured('STATION_FETCH_START', {
           'zoom_level': currentZoom.toStringAsFixed(2),
           'bounds': _currentBounds.toString(),
+          'focus_site': focusPoint == null
+              ? null
+              : '${focusPoint.latitude},${focusPoint.longitude}',
         });
 
         // Fetch stations in visible bounds with progressive updates
         final stations = await _weatherStationService.getStationsInBounds(
           _currentBounds!,
+          focusPoint: focusPoint,
           onProgress: ({
             required source,
             required displayName,

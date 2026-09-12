@@ -39,11 +39,16 @@ class WeatherStationService {
   /// Fetches in parallel, then deduplicates and returns combined results
   /// Optional [onProgress] callback reports each provider's completion
   ///
+  /// [focusPoint] is the point the caller is actually looking at, when it has
+  /// one. It is forwarded untouched; only a point-based discovery provider
+  /// (WU PWS) uses it, and it prefers it over the viewport centre.
+  ///
   /// [providersForTest] bypasses the enabled-provider lookup so a test can
   /// drive this method with fake providers instead of the live registry.
   Future<List<WeatherStation>> getStationsInBounds(
     LatLngBounds bounds, {
     ProviderProgressCallback? onProgress,
+    LatLng? focusPoint,
     @visibleForTesting List<WeatherStationProvider>? providersForTest,
   }) async {
     try {
@@ -91,6 +96,7 @@ class WeatherStationService {
           // Pass callback directly to provider - let provider decide when to call it
           final stations = await provider.fetchStations(
             bounds,
+            focusPoint: focusPoint,
             onApiCallStart: onProgress != null
                 ? () {
                     // Provider is notifying that it's making an API call

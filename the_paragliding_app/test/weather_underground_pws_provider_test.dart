@@ -154,6 +154,68 @@ void main() {
           reason: 'the floor stops a tight viewport re-probing on a nudge');
     });
 
+    test('a focus site with only distant stations still probes', () {
+      // The Quinns Beach Launch case: six known stations 1.4-3.7 km away made
+      // the viewport look covered, while the station 0.3 km from the launch was
+      // in none of them - and location/near at the launch returns ten more.
+      final provider = WeatherUndergroundPwsProvider.instance;
+      provider.clearCacheForTest();
+      provider.discovered['IPERTH4110'] = DiscoveredPwsStation(
+        id: 'IPERTH4110',
+        name: 'Perth',
+        latitude: -31.6730,
+        longitude: 115.6990,
+        distanceKm: 1.4,
+        qcStatus: 1,
+        updateTimeUtc:
+            DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
+        coverageRadiusKm: 1.4,
+      );
+
+      final bounds =
+          LatLngBounds(LatLng(-31.6891, 115.6653), LatLng(-31.6230, 115.7471));
+      const launch = LatLng(-31.6632, 115.689);
+      expect(provider.viewportCoveredForTest(bounds, focusPoint: launch),
+          isFalse,
+          reason: 'the station at the launch is the one being asked for');
+    });
+
+    test('a focus site with a station at it is covered', () {
+      final provider = WeatherUndergroundPwsProvider.instance;
+      provider.clearCacheForTest();
+      provider.discovered['IPERTH2973'] = DiscoveredPwsStation(
+        id: 'IPERTH2973',
+        name: 'Perth',
+        latitude: -31.6660, // ~0.3 km from the launch
+        longitude: 115.6900,
+        distanceKm: 0.3,
+        qcStatus: 1,
+        updateTimeUtc:
+            DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
+        coverageRadiusKm: 0.3,
+      );
+
+      final bounds =
+          LatLngBounds(LatLng(-31.6891, 115.6653), LatLng(-31.6230, 115.7471));
+      const launch = LatLng(-31.6632, 115.689);
+      expect(provider.viewportCoveredForTest(bounds, focusPoint: launch), isTrue);
+    });
+
+    test('a probe elsewhere on screen does not cover a named focus site', () {
+      // The credit must be relative to the focus. The live session's probe at
+      // -31.6860,115.7019 put six stations in view but knows nothing about the
+      // launch 2.8 km away, so it must not stand in for asking about the launch.
+      final provider = WeatherUndergroundPwsProvider.instance;
+      provider.clearCacheForTest();
+      provider.lastProbePointForTest = LatLng(-31.6860, 115.7019);
+
+      final bounds =
+          LatLngBounds(LatLng(-31.6891, 115.6653), LatLng(-31.6230, 115.7471));
+      const launch = LatLng(-31.6632, 115.689);
+      expect(provider.viewportCoveredForTest(bounds, focusPoint: launch),
+          isFalse);
+    });
+
     test('stale stations do not count as coverage', () {
       final provider = WeatherUndergroundPwsProvider.instance;
       provider.clearCacheForTest();

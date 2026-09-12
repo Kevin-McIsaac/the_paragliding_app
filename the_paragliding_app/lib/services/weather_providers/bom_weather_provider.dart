@@ -69,6 +69,7 @@ class BomWeatherProvider implements WeatherStationProvider {
     LatLngBounds bounds, {
     Function()? onApiCallStart,
     void Function(List<WeatherStation>)? onStationsUpdated,
+    LatLng? focusPoint,
   }) async {
     try {
       // Step 1: Determine which state(s) overlap with view bounds

@@ -195,6 +195,20 @@ void main() {
     expect(seen, contains('weatherUndergroundPws:1:false'));
     expect(seen, contains('weatherUndergroundPws:1:true'));
   });
+
+  test('the focus point is forwarded to the provider', () async {
+    final provider = _PushProvider(cacheAnswer: [a()], pushes: const []);
+    const focus = LatLng(-31.6632, 115.689); // Quinns Beach Launch
+
+    await WeatherStationService.instance.getStationsInBounds(
+      bounds,
+      providersForTest: [provider],
+      focusPoint: focus,
+    );
+
+    expect(provider.lastFocusPoint, focus,
+        reason: 'point-based discovery must be aimed where the caller looks');
+  });
 }
 
 /// One replayed progressive update: the stations, and whether it is the
@@ -213,6 +227,9 @@ class _PushProvider implements WeatherStationProvider {
 
   final List<WeatherStation> cacheAnswer;
   final List<_Push> pushes;
+
+  /// What the service forwarded as the discovery focus point, if anything.
+  LatLng? lastFocusPoint;
 
   @override
   WeatherStationSource get source => WeatherStationSource.weatherUndergroundPws;
@@ -256,7 +273,9 @@ class _PushProvider implements WeatherStationProvider {
     Function()? onApiCallStart,
     void Function(List<WeatherStation> stations, {bool passComplete})?
         onStationsUpdated,
+    LatLng? focusPoint,
   }) async {
+    lastFocusPoint = focusPoint;
     onApiCallStart?.call();
     for (final push in pushes) {
       onStationsUpdated?.call(push.stations, passComplete: push.passComplete);
@@ -322,6 +341,7 @@ class _BlockingProvider implements WeatherStationProvider {
     Function()? onApiCallStart,
     void Function(List<WeatherStation> stations, {bool passComplete})?
         onStationsUpdated,
+    LatLng? focusPoint,
   }) async =>
       result;
 

@@ -26,10 +26,13 @@ import 'weather_station_provider.dart';
 /// docs/PWS_STATION_DISCOVERY.md):
 ///
 /// - A persistent set of discovered stations is kept for the session.
-/// - A viewport is "covered" when a fresh known station lies **inside it**, or
-///   when the same area has been probed recently - then zero API calls are made
+/// - An area is "covered" when a fresh known station lies within
+///   [MapConstants.wuLocalCoverageRadiusKm] of the point we would probe, or when
+///   that same neighbourhood was probed recently - then zero API calls are made
 ///   and stations come straight from the cache.
-/// - Otherwise the viewport centre is probed once and the results merged in.
+/// - Otherwise that point is probed once and the results merged in. It is the
+///   caller's `focusPoint` when it named one - the site the pilot is looking at
+///   - and the viewport centre otherwise.
 ///
 /// Wind readings come from `pws/observations/current` (units=m → km/h
 /// natively). Stations whose `updateTimeUtc` is older than
@@ -174,6 +177,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     Function()? onApiCallStart,
     void Function(List<WeatherStation> stations, {bool passComplete})?
         onStationsUpdated,
+    LatLng? focusPoint,
   }) async {
     await _loadPersistedCache();
     final generation = ++_generation;
@@ -188,11 +192,14 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     // pass then pushes only what the readings actually change.
     _rememberPushed(cached);
 
-    // Background pass refines the view: one centre probe if the area is
-    // unknown, then readings, pushing updates through onStationsUpdated.
+    // Background pass refines the view: one probe if the area is unknown, then
+    // readings, pushing updates through onStationsUpdated. The probe goes to
+    // focusPoint when the caller named one - the site the pilot is looking at -
+    // and to the viewport centre otherwise.
     _enqueueBackgroundPass(bounds,
         apiKey: apiKeyForTest ?? ApiKeys.wundergroundApiKey,
         onApiCallStart: onApiCallStart, onStationsUpdated: onStationsUpdated,
+        focusPoint: focusPoint,
         generation: generation);
 
     return cached;
@@ -206,6 +213,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     Function()? onApiCallStart,
     void Function(List<WeatherStation> stations, {bool passComplete})?
         onStationsUpdated,
+    LatLng? focusPoint,
     required int generation,
   }) {
     final previous = _fetchQueue ?? Future.value();
@@ -217,24 +225,32 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
               apiKey: apiKey,
               onApiCallStart: onApiCallStart,
               onStationsUpdated: onStationsUpdated,
+              focusPoint: focusPoint,
               generation: generation,
             ))
         .whenComplete(() => _pendingPasses--);
     _fetchQueue = task;
   }
 
-  /// One background pass: centre probe (if the viewport is unknown), then
-  /// readings - pushing refined station lists as each stage lands.
+  /// One background pass: a probe when the area is unknown, then readings -
+  /// pushing refined station lists as each stage lands.
   Future<void> _backgroundPass(
     LatLngBounds bounds, {
     required String apiKey,
     Function()? onApiCallStart,
     void Function(List<WeatherStation> stations, {bool passComplete})?
         onStationsUpdated,
+    LatLng? focusPoint,
     required int generation,
   }) async {
     try {
       if (apiKey.isEmpty) return;
+
+      // Where to probe: the point the caller is focused on when it named one,
+      // else the viewport centre. Discovery is point-based and returns only the
+      // 10 nearest, so probing the pilot's own site is what puts the station at
+      // their launch on the map.
+      final target = focusPoint ?? _boundsCentre(bounds);
 
       bool superseded() => generation != _generation;
       void push({bool passComplete = false}) {
@@ -257,10 +273,10 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
         onStationsUpdated?.call(delta);
       }
 
-      // One centre probe when the viewport is unknown to the cache. The
-      // 10 nearest stations to the centre are exactly what a z13-14 user
-      // sees; country-wide density is not worth 12 grid probes at 2s each.
-      if (_isViewportCovered(bounds)) {
+      // Probe when the area around `target` is unknown to the cache. The 10
+      // nearest stations to that point are what the pilot is looking at;
+      // country-wide density is not worth a grid of probes at 2s each.
+      if (_isViewportCovered(bounds, focusPoint)) {
         LoggingService.structured('WU_PWS_CACHE_HIT', {
           'total_stations': _discoveredCount,
           'fresh_stations': _freshCount,
@@ -268,7 +284,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
       } else {
         if (superseded()) return;
         onApiCallStart?.call();
-        await _probePoint(_boundsCentre(bounds), apiKey);
+        await _probePoint(target, apiKey);
         // Persist before the supersession check. The discovered set is not
         // viewport-dependent: a pass that has been superseded still found these
         // stations, and the write is what carries them past a restart. Only the
@@ -313,34 +329,38 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     }
   }
 
-  /// The viewport is "covered" when a fresh known station lies inside it, or
-  /// when a recent probe still speaks for it (see below).
+  /// The area around the point we would probe is "covered" when a fresh known
+  /// station lies within [MapConstants.wuLocalCoverageRadiusKm] of it, or when
+  /// a recent probe already asked about that same neighbourhood.
   ///
-  /// The station test is **inside the bounds**, not within a radius of the
-  /// centre. The centre test marked a small high-zoom viewport covered by a
-  /// station it does not draw, so no probe ran and the view stayed empty. Seen
-  /// live 2026-09-12 at Quinns Rocks: a 6.5 km viewport whose nearest known
-  /// station was 7.8 km away logged WU_PWS_CACHE_HIT with filtered_count=0 and
-  /// showed no markers, while a probe at that centre returns 10 stations, all
-  /// inside the viewport.
+  /// The station test is **proximity to the probe target**, not "any station in
+  /// the viewport" and not a radius around the centre. Both earlier forms let a
+  /// viewport look covered while the stations at the pilot's own launch were
+  /// unknown. Seen live 2026-09-12 at Quinns Beach Launch: the viewport held six
+  /// known stations (1.4-3.7 km out, found by a probe 2.5 km south), so no probe
+  /// ran - while `location/near` at the launch returns ten stations, all ten
+  /// unknown, the nearest 0.3 km away.
   ///
-  /// The probe-point credit is likewise **not** a fixed radius. `location/near`
-  /// answers with the 10 *nearest* stations, and measured against a real point
-  /// that answer is only ~25% shared 2 km away and effectively disjoint past
-  /// 4 km - so a probe 10.5 km away (the same live case, the last probe being
-  /// at -31.7688,115.6987) says nothing about this viewport. It counts only
-  /// while its point is still on screen, or while the view has merely crept
-  /// from it by [MapConstants.wuProbeCreditRadiusKm]. Both forms are needed:
-  /// the on-screen test scales with the viewport, the floor keeps a very tight
-  /// one from re-probing on a nudge.
+  /// The probe target is the caller's [focusPoint] when it named one (the site
+  /// the pilot is looking at), else the viewport centre. The probe-point credit
+  /// is deliberately local for the same reason: `location/near` answers with the
+  /// 10 *nearest* stations, and measured against a real point that answer is only
+  /// ~25% shared 2 km away and effectively disjoint past 4 km, so a probe 2.7 km
+  /// away (the same live session) says nothing about the launch. With no named
+  /// focus, a probe point still on screen also counts - there the ask is about
+  /// the viewport, and that scales with it.
   ///
   /// The credit expires: without this, a session two hours old would consider
   /// an area covered while every cached station in it has gone stale and
   /// dropped off the map - the view would stay empty forever.
-  bool _isViewportCovered(LatLngBounds bounds) {
-    final centre = _boundsCentre(bounds);
+  bool _isViewportCovered(LatLngBounds bounds, LatLng? focusPoint) {
+    final target = focusPoint ?? _boundsCentre(bounds);
+    const radius = MapConstants.wuLocalCoverageRadiusKm;
     final fresh = discovered.values.where((s) => !s.isStale);
-    if (fresh.any((s) => bounds.contains(LatLng(s.latitude, s.longitude)))) {
+    if (fresh.any((s) =>
+        _distanceKm(target.latitude, target.longitude, s.latitude,
+                s.longitude) <
+            radius)) {
       return true;
     }
     final probe = _lastProbePoint;
@@ -349,10 +369,14 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     if (DateTime.now().difference(lastProbeAt) >= probePointTrustTTL) {
       return false;
     }
-    return bounds.contains(probe) ||
-        _distanceKm(centre.latitude, centre.longitude, probe.latitude,
-                probe.longitude) <
-            MapConstants.wuProbeCreditRadiusKm;
+    if (_distanceKm(target.latitude, target.longitude, probe.latitude,
+            probe.longitude) <
+        radius) {
+      return true;
+    }
+    // A named focus is asked about directly: a probe elsewhere on screen does
+    // not answer "is there a station at this launch".
+    return focusPoint == null && bounds.contains(probe);
   }
 
   /// Centre of [bounds] - the natural "where is the user looking" anchor for
@@ -919,7 +943,8 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
 
   /// Test seam for [_isViewportCovered].
   @visibleForTesting
-  bool viewportCoveredForTest(LatLngBounds bounds) => _isViewportCovered(bounds);
+  bool viewportCoveredForTest(LatLngBounds bounds, {LatLng? focusPoint}) =>
+      _isViewportCovered(bounds, focusPoint);
 
   /// Test seam for [_lastProbePoint]; stamps the probe as just-made so the
   /// trust TTL passes.
