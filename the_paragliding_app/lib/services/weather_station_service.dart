@@ -77,34 +77,36 @@ class WeatherStationService {
                 ? () {
                     // Provider is notifying that it's making an API call
                     providersWithApiCalls.add(provider.source); // Track that this provider made an API call
-                    final deduplicatedSoFar = _deduplicateStations(allStations);
                     onProgress.call(
                       source: provider.source,
                       displayName: provider.displayName,
                       success: true,
                       stationCount: 0, // API call starting, no results yet
-                      stations: deduplicatedSoFar,
+                      // Nothing has changed for the consumer to merge - this
+                      // is a start signal, not a station list.
+                      stations: const <WeatherStation>[],
                     );
                   }
                 : null,
             // Cache-first providers (WU PWS) push refinements as their
             // background passes land; each update flows through the same
-            // progress channel as a completion so the map re-renders. The
-            // final push carries passComplete so the screen can end the
-            // provider's loading state.
+            // progress channel as a completion so the map re-renders.
+            // Intermediate pushes carry only the stations whose state changed;
+            // the final push carries passComplete and the full list.
             onStationsUpdated: onProgress != null
                 ? (updatedStations, {passComplete = false}) {
                     hasPushed = true;
                     allStations
                       ..removeWhere((s) => s.source == provider.source)
                       ..addAll(updatedStations);
-                    final deduplicatedSoFar = _deduplicateStations(allStations);
                     onProgress.call(
                       source: provider.source,
                       displayName: provider.displayName,
                       success: true,
                       stationCount: updatedStations.length,
-                      stations: deduplicatedSoFar,
+                      // Forward the push as-is: it is this provider's own list,
+                      // never the cumulative one from every provider.
+                      stations: updatedStations,
                       passComplete: passComplete,
                     );
                   }
@@ -116,25 +118,29 @@ class WeatherStationService {
 
           // Add to running total and deduplicate
           allStations.addAll(stations);
-          final deduplicatedSoFar = _deduplicateStations(allStations);
 
           // Only report progress if:
           // 1. Provider returned stations (stationCount > 0), OR
           // 2. Provider made an API call (is in providersWithApiCalls set)
           // This ensures providers that skip API calls don't appear in overlay
           // But providers that made API calls get completion even with 0 results
-          if (stations.isNotEmpty || providersWithApiCalls.contains(provider.source)) {
-            // Report cumulative stations (deduplicated) - UI will replace all stations with this list
+          //
+          // A push-based provider's return is its cache answer, not its result:
+          // its own final push carries the terminal event, so this one must not
+          // claim completion or the overlay closes before the live pass lands.
+          if (!hasPushed &&
+              (stations.isNotEmpty ||
+                  providersWithApiCalls.contains(provider.source))) {
             onProgress?.call(
               source: provider.source,
               displayName: provider.displayName,
               success: true,
               stationCount: stations.length,
-              stations: deduplicatedSoFar,  // Cumulative deduplicated list, not incremental
+              // This provider's own stations - the consumer merges per source.
+              stations: stations,
               // Blocking providers report exactly twice (start + final);
-              // this is their terminal event. Push-based providers
-              // (onStationsUpdated) deliver their own terminal passComplete.
-              passComplete: !hasPushed,
+              // this is their terminal event.
+              passComplete: !provider.pushesProgressively,
             );
           }
 
@@ -145,14 +151,14 @@ class WeatherStationService {
           // Only report error if provider made an API call
           // This prevents providers that error before API calls from showing in overlay
           if (providersWithApiCalls.contains(provider.source)) {
-            // Report error with current stations (no new ones from this provider)
-            final deduplicatedSoFar = _deduplicateStations(allStations);
+            // Failure carries no stations: the consumer keeps what it has and
+            // just records the error state for this source.
             onProgress?.call(
               source: provider.source,
               displayName: provider.displayName,
               success: false,
               stationCount: 0,
-              stations: deduplicatedSoFar,
+              stations: const <WeatherStation>[],
               passComplete: true,
             );
           }

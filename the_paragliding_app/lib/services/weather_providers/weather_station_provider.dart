@@ -28,6 +28,15 @@ abstract class WeatherStationProvider {
   /// Whether this provider requires an API key
   bool get requiresApiKey;
 
+  /// Whether this provider refines its answer through [onStationsUpdated]
+  /// rather than only returning a list.
+  ///
+  /// A push-based provider's return value is its *cache* answer, not its
+  /// result: the background pass it just queued delivers the live one. The
+  /// caller must therefore not treat that return as a terminal event - the
+  /// provider's own final push carries [onStationsUpdated]'s `passComplete`.
+  bool get pushesProgressively => false;
+
   /// Fetch weather stations within a bounding box
   /// Returns list of stations with coordinates and metadata
   /// May or may not include wind data depending on provider API
@@ -38,8 +47,9 @@ abstract class WeatherStationProvider {
   /// [onStationsUpdated] - Optional callback that provider calls whenever it
   /// has a better station list than the one it returned. Lets a provider
   /// return its cache instantly and refine in the background (point-based
-  /// APIs like WU PWS discovery); other providers never call it. The final
-  /// call of a background pass carries [passComplete] = true.
+  /// APIs like WU PWS discovery); other providers never call it. Intermediate
+  /// calls carry only the stations whose state changed; the final call of a
+  /// background pass carries `passComplete` = true and the full list.
   Future<List<WeatherStation>> fetchStations(
     LatLngBounds bounds, {
     Function()? onApiCallStart,

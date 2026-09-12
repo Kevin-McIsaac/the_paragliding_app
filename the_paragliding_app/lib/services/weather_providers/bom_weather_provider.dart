@@ -35,6 +35,11 @@ class BomWeatherProvider implements WeatherStationProvider {
   @override
   WeatherStationSource get source => WeatherStationSource.bom;
 
+  /// These providers answer with a complete list, so their return value is
+  /// their result - see [WeatherStationProvider.pushesProgressively].
+  @override
+  bool get pushesProgressively => false;
+
   @override
   String get displayName => 'Bureau of Meteorology';
 
