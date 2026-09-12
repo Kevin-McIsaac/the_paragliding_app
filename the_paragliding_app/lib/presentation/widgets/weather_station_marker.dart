@@ -6,6 +6,7 @@ import '../../data/models/weather_station_source.dart';
 import '../../data/models/wind_data.dart';
 import '../../services/weather_providers/holfuy_weather_provider.dart';
 import '../../services/weather_providers/weather_station_provider_registry.dart';
+import 'holfuy_marker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Weather station marker showing wind direction and speed with barbed arrow
@@ -16,8 +17,12 @@ class WeatherStationMarker extends StatelessWidget {
   final VoidCallback? onTap;
 
   /// Called when a reading fetched on demand should be reflected on the map.
-  /// Holfuy wind arrives only after a tap, so without this the marker would
-  /// stay blank behind the dialog that just loaded it.
+  /// Holfuy wind arrives only after a tap, so without this the station would
+  /// keep the reading only inside the dialog that fetched it.
+  ///
+  /// For a Holfuy station this changes the tooltip, not the mark: the marker is
+  /// [HolfuyMarker] before and after. It also seeds the cached reading the
+  /// dialog reopens with.
   final void Function(WindData wind)? onReadingLoaded;
 
   static const double markerSize = 40.0;
@@ -43,8 +48,10 @@ class WeatherStationMarker extends StatelessWidget {
       station.observationType != 'WU PWS (no wind data)';
 
   /// A Holfuy station whose reading has not been fetched yet. Its wind is not
-  /// missing - the app does not ask Holfuy until someone taps - so the marker
+  /// missing - the app does not ask Holfuy until someone taps - so the tooltip
   /// says "tap for wind" rather than claiming the station has no data.
+  ///
+  /// The marker itself is [HolfuyMarker] either way; only the tooltip differs.
   static bool _isHolfuyUnread(WeatherStation station) =>
       station.source == WeatherStationSource.holfuy && station.windData == null;
 
@@ -90,16 +97,17 @@ class WeatherStationMarker extends StatelessWidget {
         child: SizedBox(
           width: markerSize,
           height: markerSize,
-          child: _isHolfuyUnread(station)
-              ? const _HolfuyUnreadMarker()
+          // Every Holfuy station is its own symbol, read or not: the wind barb
+          // is a shared NOAA convention that says "this is a wind reading",
+          // while Holfuy's mark says which service reported it. The reading
+          // itself is in the tooltip and the dialog.
+          child: station.source == WeatherStationSource.holfuy
+              ? const HolfuyMarker()
               : CustomPaint(
                   painter: _WeatherStationPainter(
-                    windData: station.windData,
+                    windData: windData,
                     pending: windData == null && _isPendingStation(station),
                     noData: windData == null && _isNoDataStation(station),
-                    accent: station.source == WeatherStationSource.holfuy
-                        ? _HolfuyUnreadMarker.discColor
-                        : null,
                   ),
                 ),
         ),
@@ -120,44 +128,6 @@ class WeatherStationMarker extends StatelessWidget {
   }
 }
 
-/// A Holfuy station whose reading has not been asked for yet.
-///
-/// The weather-station ring is a 1.5 px grey circle, which disappears against
-/// the basemap and reads as "still loading" when the truth is "not requested".
-/// This is a filled violet disc with a white wind glyph instead: the one hue the
-/// map has left (green/orange/red are flyability, blue/cobalt are sites, amber
-/// is selection), so the station is findable and unmistakably a weather station.
-class _HolfuyUnreadMarker extends StatelessWidget {
-  /// Also used as the ring and barb colour once a reading arrives, so a Holfuy
-  /// station stays identifiable in both states.
-  static const Color discColor = Color(0xFF6A1B9A);
-
-  const _HolfuyUnreadMarker();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        width: 22,
-        height: 22,
-        decoration: BoxDecoration(
-          color: discColor,
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 1.5),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x66000000),
-              blurRadius: 3,
-              offset: Offset(0, 1),
-            ),
-          ],
-        ),
-        child: const Icon(Icons.air, size: 12, color: Colors.white),
-      ),
-    );
-  }
-}
-
 /// Custom painter for weather station marker with barbed arrow
 class _WeatherStationPainter extends CustomPainter {
   final WindData? windData;
@@ -169,15 +139,10 @@ class _WeatherStationPainter extends CustomPainter {
   /// dashed, dimmed circle so it reads as "station exists, has no data".
   final bool noData;
 
-  /// Ring and barb colour. Defaults to the station grey; Holfuy passes its own
-  /// so its readings keep the source's identity.
-  final Color? accent;
-
   _WeatherStationPainter({
     required this.windData,
     this.pending = false,
     this.noData = false,
-    this.accent,
   });
 
   @override
@@ -225,7 +190,7 @@ class _WeatherStationPainter extends CustomPainter {
 
     // Draw circle outline only (no fill)
     final circlePaint = Paint()
-      ..color = accent ?? Colors.grey[800]!
+      ..color = Colors.grey[800]!
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
 
@@ -240,7 +205,7 @@ class _WeatherStationPainter extends CustomPainter {
 
   void _drawWindBarb(Canvas canvas, Offset center, double circleRadius, WindData windData) {
     final barbPaint = Paint()
-      ..color = accent ?? Colors.grey[800]!
+      ..color = Colors.grey[800]!
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5
       ..strokeCap = StrokeCap.round;
@@ -316,8 +281,7 @@ class _WeatherStationPainter extends CustomPainter {
   bool shouldRepaint(_WeatherStationPainter oldDelegate) {
     return oldDelegate.windData != windData ||
         oldDelegate.pending != pending ||
-        oldDelegate.noData != noData ||
-        oldDelegate.accent != accent;
+        oldDelegate.noData != noData;
   }
 }
 

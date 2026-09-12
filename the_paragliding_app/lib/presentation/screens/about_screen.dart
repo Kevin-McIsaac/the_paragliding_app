@@ -380,6 +380,21 @@ class _AboutScreenState extends State<AboutScreen> {
                       icon: Icons.paragliding,
                       text: 'Holfuy wind stations',
                     ),
+                    // The marker drawn for a Holfuy station is Arcticons'
+                    // "holfuy" glyph. Arcticons ships its app under GPL-3.0 but
+                    // licenses the icons themselves CC BY-SA 4.0, and it is the
+                    // icon licence that covers this use - stated here because
+                    // CC BY-SA requires attribution, and indented like the
+                    // guide licences above so it reads as belonging to the
+                    // entry it qualifies.
+                    Padding(
+                      padding: const EdgeInsets.only(left: 28, top: 4),
+                      child: AppAttributionLink.compact(
+                        url: 'https://creativecommons.org/licenses/by-sa/4.0/',
+                        icon: Icons.copyright,
+                        text: 'Station marker icon: Arcticons, CC BY-SA 4.0',
+                      ),
+                    ),
                   ],
                 ),
               ),
