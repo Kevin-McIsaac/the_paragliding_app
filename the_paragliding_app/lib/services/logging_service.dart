@@ -192,20 +192,117 @@ class LoggingService {
     _logger.d(message);
   }
 
-  // Performance thresholds from CLAUDE.md guidelines (in milliseconds)
-  static final Map<String, int> _performanceThresholds = {
-    'Database Query': 200,
-    'Single flight query': 100,
-    'Load all flights': 200,
-    'Load flights': 200,
-    'IGC file loading': 1000,
-    'Database startup': 300,
-    'Hot reload': 2000,
+  // Performance thresholds in milliseconds, keyed by the operation name passed
+  // to [performance]. Local work uses CLAUDE.md's targets; network and
+  // user-initiated maintenance work uses the point at which the wait is worth
+  // reporting rather than a target it can never meet. Names built at the call
+  // site (`'BOM ${state.code} parsing'`, `'CESIUM $metric'`, the
+  // `PgeSitesQuery_*` pair) are covered by [_thresholdFor]'s prefix match.
+  //
+  // This map used to hold ten names, exactly one of which - 'Load flights' - was
+  // ever passed to [performance]: a 1761ms database startup and an 11306ms first
+  // map load both went unremarked, and 50 of the 51 operations in the codebase
+  // had no threshold at all. test/performance_thresholds_test.dart now fails if a
+  // call site's operation has none.
+  static const Map<String, int> _performanceThresholds = {
+    // Startup and screen work.
+    'Startup: database': 1000, // >1s to open the database
+    'Startup: tables': 500,
+    'Load Nearby Sites Data': 1000, // first map content; >1s is the flag
     'Screen navigation': 300,
+    'Hot reload': 2000,
     'List scrolling': 16, // 60fps
+    // Flights and sites - query targets.
+    'Load flights': 200,
+    'Load all flights': 200,
+    'Load database stats': 200,
+    'Statistics Load': 200,
+    'Wings Load': 200,
+    'Sites Load': 200,
+    'SiteBoundsLoaderV2': 200,
+    'Optimized sites query': 200,
+    'Local sites with PGE JOIN': 200,
+    'PgeSitesQuery': 200, // PgeSitesQuery_Bounds / _Search
+    'Database Query': 200,
     'database_query': 200,
     'flights loaded': 200,
+    'Single flight query': 100,
+    'Filter Sites by Distance': 100,
+    // Weather parsing and station handling.
+    'Station deduplication': 100,
+    'FFVL parsing': 500,
+    'Pioupiou parsing': 500,
+    'AWC_METAR parsing': 500,
+    'BOM ': 500, // BOM ${state.code} parsing
+    'Get Current Position': 2000,
+    // Network work: long by nature, so the flag is well past a target.
+    'Catalogue download': 5000,
+    'PGE Sites Download': 5000,
+    'PGE Sites Import': 3000,
+    'Paragliding Earth API': 3000, // also the (Error) / (Failed) names
+    'Test ParaglidingEarth API': 3000,
+    'Test Cesium token': 3000,
+    'Cesium3D Provider Switch': 2000,
+    'CESIUM ': 1000, // CESIUM $metric
+    // IGC work.
+    'IGC file loading': 1000,
+    'IGC_FILE_PARSE': 1000,
+    'IGC batch import': 3000,
+    'Analyze IGC files': 3000,
+    'Cleanup orphaned IGC files': 3000,
+    // Airspace cache internals - local disk and query work.
+    '[AIRSPACE_DB_INIT] ': 500,
+    '[BATCH_GEOMETRY_FETCH]': 500,
+    '[BATCH_GEOMETRY_FETCH_WITH_CACHE]': 500,
+    '[BATCH_GEOMETRY_INSERT]': 500,
+    '[GET_GEOMETRY_SLOW]': 1000, // the call site already decided it was slow
+    '[PUT_GEOMETRY_SLOW]': 1000,
+    '[MEMORY_CACHE_HIT]': 50,
+    '[SPATIAL_QUERY_COMPLETE]': 500,
+    'Stored airspace geometry': 500,
+    'Cleaned expired cache': 500,
+    'Clear map cache': 500,
+    'Airspace Processing (Error)': 1000,
+    // User-initiated maintenance: no target, just an upper bound.
+    'Delete all flight data': 5000,
+    'Load backup diagnostics': 2000,
+    'Re-match flight launches': 10000,
+    'Re-match unknown sites': 10000,
+    'Recreate database from IGC': 30000,
   };
+
+  /// The threshold for [operation]: exact match first, then the longest matching
+  /// prefix, so names assembled at the call site are covered too.
+  static int? _thresholdFor(String operation) {
+    final exact = _performanceThresholds[operation];
+    if (exact != null) return exact;
+    int? best;
+    var bestLength = -1;
+    for (final entry in _performanceThresholds.entries) {
+      if (entry.key.length > bestLength && operation.startsWith(entry.key)) {
+        best = entry.value;
+        bestLength = entry.key.length;
+      }
+    }
+    return best;
+  }
+
+  /// WARNING, CRITICAL, or null when [operation] at [ms] is inside its
+  /// threshold. The warning path and the test both go through here.
+  static String? _thresholdSeverity(String operation, int ms) {
+    final threshold = _thresholdFor(operation);
+    if (threshold == null || ms <= threshold) return null;
+    return ms > threshold * 2 ? 'CRITICAL' : 'WARNING';
+  }
+
+  /// The threshold [operation] resolves to, or null if it has none.
+  @visibleForTesting
+  static int? thresholdForTest(String operation) => _thresholdFor(operation);
+
+  /// The warning level [operation] at [ms] warrants, or null if none.
+  @visibleForTesting
+  static String? thresholdSeverityForTest(String operation, int ms) =>
+      _thresholdSeverity(operation, ms);
 
   /// Log performance metrics with structured format and automatic threshold warnings
   static void performance(String operation, Duration duration, [String? details]) {
@@ -224,9 +321,9 @@ class LoggingService {
         : '[PERF] $operation | ${ms}ms';
 
     // Check if operation exceeds performance threshold
-    final threshold = _performanceThresholds[operation];
-    if (threshold != null && ms > threshold) {
-      final severity = ms > threshold * 2 ? 'CRITICAL' : 'WARNING';
+    final threshold = _thresholdFor(operation);
+    final severity = _thresholdSeverity(operation, ms);
+    if (severity != null) {
       final detailsStr = details != null ? ' | $details' : '';
       _logger.w('[PERF_THRESHOLD_$severity] $operation | actual=${ms}ms | target=${threshold}ms$detailsStr');
     }

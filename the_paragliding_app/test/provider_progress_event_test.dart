@@ -1,4 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:the_paragliding_app/data/models/weather_station.dart';
+import 'package:the_paragliding_app/data/models/weather_station_source.dart';
+import 'package:the_paragliding_app/data/models/wind_data.dart';
 import 'package:the_paragliding_app/presentation/screens/nearby_sites_screen.dart';
 
 /// The map's per-provider loading chip used to spin forever.
@@ -90,6 +93,82 @@ void main() {
 
     test('a failure is not a start', () {
       expect(classify(success: false), ProviderProgressEvent.ignore);
+    });
+  });
+
+  // Providers hand the screen one source's stations at a time: intermediate
+  // pushes carry only what changed, the terminal push carries that provider's
+  // full list. The screen used to replace everything with a cumulative list
+  // instead, re-processing every station of every provider on every push.
+  group('station updates merge per source', () {
+    WeatherStation station(WeatherStationSource source, String id,
+            {double? speed}) =>
+        WeatherStation(
+          id: id,
+          source: source,
+          latitude: -32.0,
+          longitude: 116.0,
+          windData: speed == null
+              ? null
+              : WindData(
+                  speedKmh: speed,
+                  directionDegrees: 90,
+                  timestamp: DateTime(2026, 9, 12),
+                ),
+        );
+
+    test('a delta merges by key and leaves every other station alone', () {
+      final current = [
+        station(WeatherStationSource.weatherUndergroundPws, 'A', speed: 10),
+        station(WeatherStationSource.weatherUndergroundPws, 'B', speed: 11),
+        station(WeatherStationSource.awcMetar, 'C', speed: 12),
+      ];
+
+      final merged = NearbySitesScreenState.applyStationUpdate(
+        current,
+        WeatherStationSource.weatherUndergroundPws,
+        [station(WeatherStationSource.weatherUndergroundPws, 'A', speed: 25)],
+        replaceSource: false,
+      );
+
+      expect(
+        merged.map((s) => s.key).toSet(),
+        {
+          'weatherUndergroundPws:A',
+          'weatherUndergroundPws:B',
+          'awcMetar:C',
+        },
+        reason: 'a delta must not drop the stations it does not mention',
+      );
+      expect(
+        merged
+            .firstWhere((s) => s.key == 'weatherUndergroundPws:A')
+            .windData!
+            .speedKmh,
+        25,
+        reason: 'and it must update the one it does',
+      );
+    });
+
+    test('a terminal update replaces its own source and nothing else', () {
+      final current = [
+        station(WeatherStationSource.weatherUndergroundPws, 'A'),
+        station(WeatherStationSource.weatherUndergroundPws, 'B'),
+        station(WeatherStationSource.awcMetar, 'C'),
+      ];
+
+      final merged = NearbySitesScreenState.applyStationUpdate(
+        current,
+        WeatherStationSource.weatherUndergroundPws,
+        [station(WeatherStationSource.weatherUndergroundPws, 'B')],
+        replaceSource: true,
+      );
+
+      expect(
+        merged.map((s) => s.key).toSet(),
+        {'weatherUndergroundPws:B', 'awcMetar:C'},
+        reason: 'the terminal list is the source whole, so A is gone',
+      );
     });
   });
 }

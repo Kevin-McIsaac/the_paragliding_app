@@ -590,6 +590,32 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     });
   }
 
+  /// Apply one provider's station update to the map's list.
+  ///
+  /// A push-based provider sends only the stations whose state changed between
+  /// its terminal pushes, so an intermediate update is merged by [key]; the
+  /// terminal update carries that provider's full list for the viewport and
+  /// replaces its slice, which is what drops the stations that have left.
+  /// Other providers' stations are never touched - the old code replaced the
+  /// whole list with a cumulative one, so every push re-processed every station
+  /// from every provider (seen live 2026-09-12: 54% of all app log lines).
+  @visibleForTesting
+  static List<WeatherStation> applyStationUpdate(
+    List<WeatherStation> current,
+    WeatherStationSource source,
+    List<WeatherStation> update, {
+    required bool replaceSource,
+  }) {
+    final others = current.where((s) => s.source != source).toList();
+    if (replaceSource) return [...others, ...update];
+    final merged = <String, WeatherStation>{
+      for (final s in current)
+        if (s.source == source) s.key: s,
+      for (final s in update) s.key: s,
+    };
+    return [...others, ...merged.values];
+  }
+
   /// Classify one provider progress event for the loading overlay.
   ///
   /// A terminal event ([passComplete]) has to be resolved *before* the
@@ -744,8 +770,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                 // Don't show in overlay - this was a cache hit
               }
 
-              // Cumulative update: Replace all stations with deduplicated cumulative list
-              // This creates progressive appearance as cumulative list grows with each provider
+              // Merge this provider's update in. Intermediate pushes carry only
+              // the stations whose state changed; the terminal one carries the
+              // provider's full list for the viewport.
               if (stations.isNotEmpty) {
                 // Four of five providers embed wind data in the station itself
                 // and their fetchWeatherData is just a local map - only go
@@ -758,9 +785,21 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
 
                 if (mounted) {
                   setState(() {
-                    _weatherStations = stations;  // Replace (not add) with cumulative deduplicated stations
-                    _stationWindData.clear();
+                    _weatherStations = NearbySitesScreenState.applyStationUpdate(
+                      _weatherStations,
+                      source,
+                      stations,
+                      replaceSource: passComplete,
+                    );
+                    // Upsert, never clear: a delta only covers its own source,
+                    // so clearing here would drop every other provider's wind.
                     _stationWindData.addAll(weatherData);
+                    if (passComplete) {
+                      // A terminal update defines the live set, so drop wind
+                      // for stations that have left the viewport.
+                      final live = {for (final s in _weatherStations) s.key};
+                      _stationWindData.removeWhere((k, _) => !live.contains(k));
+                    }
                   });
 
                   // Debug: fires once per provider, on top of the final
