@@ -68,7 +68,7 @@ void main() {
       expect(provider.viewportCoveredForTest(bounds), isFalse);
     });
 
-    test('covered when a fresh station sits near the centre', () {
+    test('covered when a fresh station sits inside the viewport', () {
       final provider = WeatherUndergroundPwsProvider.instance;
       provider.clearCacheForTest();
 
@@ -83,20 +83,137 @@ void main() {
         coverageRadiusKm: 8,
       );
 
-      // Centre of these bounds is (-31.85, 116.75) - within the coverage
-      // radius of ISTA1.
+      // ISTA1 is inside these bounds, so the viewport would draw it.
       final bounds = LatLngBounds(LatLng(-31.9, 116.70), LatLng(-31.8, 116.80));
       expect(provider.viewportCoveredForTest(bounds), isTrue);
     });
 
-    test('covered after a recent probe near the centre (pan within area)', () {
+    test('a fresh station outside a small viewport is not coverage', () {
+      // The Quinns Rocks case: a 6.5 km viewport whose nearest known station
+      // was 7.8 km away - inside the 12 km centre radius, outside the bounds.
+      // The old centre-radius rule called this covered, so no probe ran and the
+      // view stayed empty; a probe at this centre returns 10 stations, all
+      // inside the viewport.
       final provider = WeatherUndergroundPwsProvider.instance;
       provider.clearCacheForTest();
-      provider.lastProbePointForTest =
-          LatLng(-31.85, 116.76); // ~1km from the bounds centre
 
+      provider.discovered['IALKIM2'] = DiscoveredPwsStation(
+        id: 'IALKIM2',
+        name: 'Alkimos',
+        latitude: -31.7385, // ~7.8 km south of the viewport centre
+        longitude: 115.69453,
+        distanceKm: 7.8,
+        qcStatus: 1,
+        updateTimeUtc: DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
+        coverageRadiusKm: 7.8,
+      );
+
+      final bounds =
+          LatLngBounds(LatLng(-31.6977, 115.6582), LatLng(-31.6391, 115.7309));
+      expect(provider.viewportCoveredForTest(bounds), isFalse,
+          reason:
+              'a station the viewport cannot draw must not suppress probing');
+    });
+
+    test('covered while the probed point is still on screen', () {
+      final provider = WeatherUndergroundPwsProvider.instance;
+      provider.clearCacheForTest();
+      provider.lastProbePointForTest = LatLng(-31.84, 116.72);
+
+      // A pan small enough to keep the probed point on screen must not probe
+      // again - that is the point of the credit.
       final bounds = LatLngBounds(LatLng(-31.9, 116.65), LatLng(-31.8, 116.75));
       expect(provider.viewportCoveredForTest(bounds), isTrue);
+    });
+
+    test('a probe 10 km away does not cover a small viewport', () {
+      // The live Quinns Rocks case: the last probe was at -31.7688,115.6987,
+      // ~11 km from this viewport centre and outside it, and its 10-nearest
+      // answer held no station in view. The old fixed 12 km credit called the
+      // view covered - WU_PWS_CACHE_HIT with filtered_count=0 - and the layer
+      // stayed empty. The two answers are near-disjoint by 4 km.
+      final provider = WeatherUndergroundPwsProvider.instance;
+      provider.clearCacheForTest();
+      provider.lastProbePointForTest = LatLng(-31.7688, 115.6987);
+
+      final bounds =
+          LatLngBounds(LatLng(-31.6977, 115.6582), LatLng(-31.6391, 115.7309));
+      expect(provider.viewportCoveredForTest(bounds), isFalse,
+          reason: 'a probe 10 km away must not suppress probing this viewport');
+    });
+
+    test('a probed point just off a tight viewport still covers it', () {
+      final provider = WeatherUndergroundPwsProvider.instance;
+      provider.clearCacheForTest();
+      // ~0.9 km north of the centre, and outside these bounds.
+      provider.lastProbePointForTest = LatLng(-31.6600, 115.6940);
+
+      final bounds =
+          LatLngBounds(LatLng(-31.6720, 115.6900), LatLng(-31.6640, 115.6980));
+      expect(provider.viewportCoveredForTest(bounds), isTrue,
+          reason: 'the floor stops a tight viewport re-probing on a nudge');
+    });
+
+    test('a focus site with only distant stations still probes', () {
+      // The Quinns Beach Launch case: six known stations 1.4-3.7 km away made
+      // the viewport look covered, while the station 0.3 km from the launch was
+      // in none of them - and location/near at the launch returns ten more.
+      final provider = WeatherUndergroundPwsProvider.instance;
+      provider.clearCacheForTest();
+      provider.discovered['IPERTH4110'] = DiscoveredPwsStation(
+        id: 'IPERTH4110',
+        name: 'Perth',
+        latitude: -31.6730,
+        longitude: 115.6990,
+        distanceKm: 1.4,
+        qcStatus: 1,
+        updateTimeUtc:
+            DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
+        coverageRadiusKm: 1.4,
+      );
+
+      final bounds =
+          LatLngBounds(LatLng(-31.6891, 115.6653), LatLng(-31.6230, 115.7471));
+      const launch = LatLng(-31.6632, 115.689);
+      expect(provider.viewportCoveredForTest(bounds, focusPoint: launch),
+          isFalse,
+          reason: 'the station at the launch is the one being asked for');
+    });
+
+    test('a focus site with a station at it is covered', () {
+      final provider = WeatherUndergroundPwsProvider.instance;
+      provider.clearCacheForTest();
+      provider.discovered['IPERTH2973'] = DiscoveredPwsStation(
+        id: 'IPERTH2973',
+        name: 'Perth',
+        latitude: -31.6660, // ~0.3 km from the launch
+        longitude: 115.6900,
+        distanceKm: 0.3,
+        qcStatus: 1,
+        updateTimeUtc:
+            DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
+        coverageRadiusKm: 0.3,
+      );
+
+      final bounds =
+          LatLngBounds(LatLng(-31.6891, 115.6653), LatLng(-31.6230, 115.7471));
+      const launch = LatLng(-31.6632, 115.689);
+      expect(provider.viewportCoveredForTest(bounds, focusPoint: launch), isTrue);
+    });
+
+    test('a probe elsewhere on screen does not cover a named focus site', () {
+      // The credit must be relative to the focus. The live session's probe at
+      // -31.6860,115.7019 put six stations in view but knows nothing about the
+      // launch 2.8 km away, so it must not stand in for asking about the launch.
+      final provider = WeatherUndergroundPwsProvider.instance;
+      provider.clearCacheForTest();
+      provider.lastProbePointForTest = LatLng(-31.6860, 115.7019);
+
+      final bounds =
+          LatLngBounds(LatLng(-31.6891, 115.6653), LatLng(-31.6230, 115.7471));
+      const launch = LatLng(-31.6632, 115.689);
+      expect(provider.viewportCoveredForTest(bounds, focusPoint: launch),
+          isFalse);
     });
 
     test('stale stations do not count as coverage', () {
@@ -308,8 +425,9 @@ void main() {
       final provider = WeatherUndergroundPwsProvider.instance;
       provider.clearCacheForTest();
 
-      // A probe point alone (no stations) covers only while fresh.
-      provider.lastProbePointForTest = LatLng(-31.85, 116.75);
+      // A probe point alone (no stations) covers only while fresh, and only
+      // while its point is still on screen (or within the floor radius).
+      provider.lastProbePointForTest = LatLng(-31.85, 116.72);
       final bounds = LatLngBounds(LatLng(-31.9, 116.65), LatLng(-31.8, 116.75));
       expect(provider.viewportCoveredForTest(bounds), isTrue);
 

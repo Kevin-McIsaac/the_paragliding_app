@@ -70,6 +70,7 @@ class FfvlWeatherProvider implements WeatherStationProvider {
     LatLngBounds bounds, {
     Function()? onApiCallStart,
     void Function(List<WeatherStation>)? onStationsUpdated,
+    LatLng? focusPoint,
   }) async {
     try {
       // Early exit: Check if cached bbox overlaps with requested bounds

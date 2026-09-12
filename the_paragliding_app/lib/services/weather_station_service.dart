@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,15 +38,24 @@ class WeatherStationService {
   /// Get weather stations in a bounding box from all enabled providers
   /// Fetches in parallel, then deduplicates and returns combined results
   /// Optional [onProgress] callback reports each provider's completion
+  ///
+  /// [focusPoint] is the point the caller is actually looking at, when it has
+  /// one. It is forwarded untouched; only a point-based discovery provider
+  /// (WU PWS) uses it, and it prefers it over the viewport centre.
+  ///
+  /// [providersForTest] bypasses the enabled-provider lookup so a test can
+  /// drive this method with fake providers instead of the live registry.
   Future<List<WeatherStation>> getStationsInBounds(
     LatLngBounds bounds, {
     ProviderProgressCallback? onProgress,
+    LatLng? focusPoint,
+    @visibleForTesting List<WeatherStationProvider>? providersForTest,
   }) async {
     try {
       final stopwatch = Stopwatch()..start();
 
       // Get enabled providers
-      final enabledProviders = await _getEnabledProviders();
+      final enabledProviders = providersForTest ?? await _getEnabledProviders();
 
       if (enabledProviders.isEmpty) {
         LoggingService.info('No weather station providers enabled');
@@ -61,6 +71,19 @@ class WeatherStationService {
       final List<WeatherStation> allStations = [];
       final Set<WeatherStationSource> providersWithApiCalls = {}; // Track which providers made API calls
 
+      // Live station state pushed by push-based providers (WU PWS), keyed by
+      // source then station key. Such a provider's fetchStations return is its
+      // *cache* answer, not its result, so this - not the return - is the truth
+      // for those sources. See the final assembly below.
+      final pushedBySource =
+          <WeatherStationSource, Map<String, WeatherStation>>{};
+      // Sources that have delivered a terminal push (the provider's full
+      // in-bounds list) during this call. Only those may be trusted over the
+      // return: a pass superseded mid-flight can push a delta batch and then
+      // never send its terminal list, and using that partial accumulator would
+      // drop every station the delta did not mention.
+      final terminalPushedSources = <WeatherStationSource>{};
+
       // Fetch from all enabled providers with progressive updates
       final futures = enabledProviders.asMap().entries.map((entry) async {
         final provider = entry.value;
@@ -73,6 +96,7 @@ class WeatherStationService {
           // Pass callback directly to provider - let provider decide when to call it
           final stations = await provider.fetchStations(
             bounds,
+            focusPoint: focusPoint,
             onApiCallStart: onProgress != null
                 ? () {
                     // Provider is notifying that it's making an API call
@@ -93,31 +117,39 @@ class WeatherStationService {
             // progress channel as a completion so the map re-renders.
             // Intermediate pushes carry only the stations whose state changed;
             // the final push carries passComplete and the full list.
-            onStationsUpdated: onProgress != null
-                ? (updatedStations, {passComplete = false}) {
-                    hasPushed = true;
-                    allStations
-                      ..removeWhere((s) => s.source == provider.source)
-                      ..addAll(updatedStations);
-                    onProgress.call(
-                      source: provider.source,
-                      displayName: provider.displayName,
-                      success: true,
-                      stationCount: updatedStations.length,
-                      // Forward the push as-is: it is this provider's own list,
-                      // never the cumulative one from every provider.
-                      stations: updatedStations,
-                      passComplete: passComplete,
-                    );
-                  }
-                : null,
+            //
+            // Wired unconditionally rather than only when a UI listener exists:
+            // the accumulated state is what makes this method's *return* honest
+            // for a push-based provider, which a caller without onProgress
+            // still relies on.
+            onStationsUpdated: (updatedStations, {passComplete = false}) {
+              hasPushed = true;
+              // Deltas merge; the terminal push carries the provider's full
+              // in-bounds list, so it replaces.
+              final accumulated = pushedBySource.putIfAbsent(
+                provider.source,
+                () => <String, WeatherStation>{},
+              );
+              if (passComplete) {
+                accumulated.clear();
+                terminalPushedSources.add(provider.source);
+              }
+              for (final station in updatedStations) {
+                accumulated[station.key] = station;
+              }
+              // Forward the push as-is: it is this provider's own list, never
+              // the cumulative one from every provider.
+              onProgress?.call(
+                source: provider.source,
+                displayName: provider.displayName,
+                success: true,
+                stationCount: updatedStations.length,
+                stations: updatedStations,
+                passComplete: passComplete,
+              );
+            },
           );
           LoggingService.info('${provider.displayName}: fetched ${stations.length} stations');
-
-          // Store result
-
-          // Add to running total and deduplicate
-          allStations.addAll(stations);
 
           // Only report progress if:
           // 1. Provider returned stations (stationCount > 0), OR
@@ -185,19 +217,39 @@ class WeatherStationService {
         'providers': providerSummary,
       });
 
-      // Final combined results (for return value compatibility)
+      // Final combined results.
+      //
+      // Per provider, prefer the accumulated pushes over the fetchStations
+      // return for a push-based provider once it has sent its terminal list.
+      // Its return is the cache answer it started from, so rebuilding purely
+      // from `results` threw away every reading the background pass had just
+      // delivered: the caller's terminal assignment then cleared them and the
+      // markers hung on "wind loading..." (seen live 2026-09-12 near Jenbach -
+      // 9 WU stations read with wind, the final result carrying 0 of them). A
+      // provider that has not sent a terminal push still falls back to its
+      // return, and any push arriving after this returns keeps flowing through
+      // onStationsUpdated.
+      final combined = <WeatherStation>[];
+      final countBySource = <String, int>{};
+      for (var i = 0; i < enabledProviders.length; i++) {
+        final provider = enabledProviders[i];
+        final pushed = pushedBySource[provider.source];
+        final usePushed = provider.pushesProgressively &&
+            pushed != null &&
+            terminalPushedSources.contains(provider.source);
+        final chosen = usePushed ? pushed.values.toList() : results[i];
+        combined.addAll(chosen);
+        countBySource[provider.source.name] = chosen.length;
+      }
       allStations.clear();
-      allStations.addAll(results.expand((list) => list));
+      allStations.addAll(combined);
 
       stopwatch.stop();
 
       LoggingService.structured('WEATHER_STATION_FETCH_COMPLETE', {
         'total_stations_before_dedup': allStations.length,
         'fetch_time_ms': stopwatch.elapsedMilliseconds,
-        'by_provider': {
-          for (var i = 0; i < enabledProviders.length; i++)
-            enabledProviders[i].source.name: results[i].length,
-        },
+        'by_provider': countBySource,
       });
 
       // Deduplicate stations

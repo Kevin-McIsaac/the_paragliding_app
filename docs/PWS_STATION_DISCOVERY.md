@@ -116,15 +116,28 @@ stations per call) while the map layer needs bbox coverage:
 
 1. A session cache holds every discovered station (`DiscoveredPwsStation`), including the
    `distanceKm` each had from the probe point that found it.
-2. For a viewport, sample points on a small grid (≤3×4, spacing ≈ 0.9 × the 12 km
-   coverage radius, capped at 12 probes). Points within the coverage radius of a *fresh*
-   known station are "covered".
-3. Only uncovered points are probed; results merge into the cache. Once an area has been
-   explored, panning back to it costs **zero API calls**.
-4. Wind readings come from `pws/observations/current` for stations whose reading is older
+2. For a viewport, **one probe at the point the pilot is looking at**
+   (`_backgroundPass`): the caller's `focusPoint` when it named one, else the viewport
+   centre. The Nearby Sites screen passes the site nearest the map centre, because a
+   point-based answer only helps if it is asked about the right point. The earlier ≤3×4
+   grid was retired: it spent up to 12 calls at 2 s each to learn what a single targeted
+   probe gives, because `location/near` returns the 10 *nearest*.
+3. That area is "covered" when a fresh known station lies within
+   `MapConstants.wuLocalCoverageRadiusKm` (1 km) of the probe target, or when a recent
+   probe already asked about that same neighbourhood. Deliberately not "any station in the
+   viewport", and deliberately a small radius: the 10-nearest answer is only ~25% shared
+   2 km away and effectively disjoint past 4 km (measured 2026-09-12), so neither a
+   station 2 km out nor a probe 3 km away answers for the launch itself. Both failures were
+   seen live the same day — a 6.5 km viewport at Quinns Rocks logged `WU_PWS_CACHE_HIT`
+   with `filtered_count=0`; later, with six stations 1.4-3.7 km away in view, Quinns Beach
+   Launch's nearest station (0.3 km) was still missing while `location/near` at the launch
+   returned ten, all unknown.
+4. Only uncovered areas are probed; results merge into the cache. Once an area has been
+   explored, panning within it costs **zero API calls**.
+5. Wind readings come from `pws/observations/current` for stations whose reading is older
    than the 10-minute TTL. All calls pass a simple 2-second throttle to respect the
    30/minute rate limit.
-5. Stations with no `updateTimeUtc` within 2 hours are dropped as dead (QC status is shown
+6. Stations with no `updateTimeUtc` within 2 hours are dropped as dead (QC status is shown
    in the observation type but does not filter).
 
 UI: the PWS layer appears in the map filter dialog, nearby-sites screen, and about-screen

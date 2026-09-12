@@ -1,4 +1,5 @@
 import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../../data/models/weather_station.dart';
 import '../../data/models/wind_data.dart';
 import '../../data/models/weather_station_source.dart';
@@ -50,11 +51,17 @@ abstract class WeatherStationProvider {
   /// APIs like WU PWS discovery); other providers never call it. Intermediate
   /// calls carry only the stations whose state changed; the final call of a
   /// background pass carries `passComplete` = true and the full list.
+  ///
+  /// [focusPoint] - Optional point the caller is actually looking at, when it
+  /// has one (the Nearby Sites screen passes the site nearest the map centre).
+  /// A provider whose discovery is point-based should prefer it over the
+  /// viewport centre; providers that answer for the whole bbox ignore it.
   Future<List<WeatherStation>> fetchStations(
     LatLngBounds bounds, {
     Function()? onApiCallStart,
     void Function(List<WeatherStation> stations, {bool passComplete})?
         onStationsUpdated,
+    LatLng? focusPoint,
   });
 
   /// Fetch current weather data for a list of stations
