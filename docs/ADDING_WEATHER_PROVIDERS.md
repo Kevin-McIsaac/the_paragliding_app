@@ -134,7 +134,9 @@ class YourProviderWeatherProvider implements WeatherStationProvider {
 
 ### 4. Register Provider
 
-**File:** `lib/services/weather_providers/weather_station_provider.dart`
+**File:** `lib/services/weather_providers/weather_station_provider_registry.dart`
+(the registry lives in its own file; `weather_station_provider.dart` holds the
+interface)
 
 Add to the registry:
 
@@ -149,6 +151,28 @@ class WeatherStationProviderRegistry {
   // ... rest of registry code
 }
 ```
+
+### 5. Choose how readings arrive
+
+Two flags govern when a provider's data reaches the map, and picking the wrong
+one is a real bug rather than a style choice:
+
+- **`pushesProgressively`** - set it `true` for a provider that returns its
+  *cache* answer from `fetchStations` and refines it later through
+  `onStationsUpdated` (WU PWS does this). The caller must then not read that
+  return as the final answer.
+- **On-demand readings** - a provider whose API cannot be bulk-read (Holfuy:
+  password-gated per station, capped at three, and it refuses multi-station
+  page requests) should return stations **without** wind from `fetchStations`,
+  return only *cached* readings from `fetchWeatherData` - **never fanning out**,
+  because that method is called with every visible station after each viewport
+  fetch - and expose a separate method that fetches one station when a pilot
+  asks for it. `HolfuyWeatherProvider.requestReading` is the pattern:
+  single-flight, serialized, paced, and cached per station.
+
+  A provider like this also has to say so on the marker: a station whose wind
+  has simply not been requested yet is not a station with no data, and the
+  tooltip and dialog should read "Tap for wind", not "No wind data".
 
 ## Data Flow
 

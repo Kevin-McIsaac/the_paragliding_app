@@ -168,6 +168,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   bool _ffvlEnabled = true; // FFVL provider enabled (default: true, has API key)
   bool _bomEnabled = true; // BOM provider enabled (default: true, free/no API key)
   bool _wundergroundPwsEnabled = true; // WU PWS provider enabled (default: true, has API key)
+  bool _holfuyEnabled = true; // Holfuy provider enabled (default: true, no API key; wind loads on tap)
   bool _hasActiveFilters = false; // Cached value to avoid FutureBuilder rebuilds
   double _maxAltitudeFt = 10000.0; // Default altitude filter
   bool _airspaceClippingEnabled = true; // Default clipping enabled
@@ -420,6 +421,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       final ffvlEnabled = prefs.getBool('weather_provider_${WeatherStationSource.ffvl.name}_enabled') ?? true;
       final bomEnabled = prefs.getBool('weather_provider_${WeatherStationSource.bom.name}_enabled') ?? true;
       final wundergroundPwsEnabled = prefs.getBool('weather_provider_${WeatherStationSource.weatherUndergroundPws.name}_enabled') ?? true;
+      final holfuyEnabled = prefs.getBool('weather_provider_${WeatherStationSource.holfuy.name}_enabled') ?? true;
 
       if (mounted) {
         setState(() {
@@ -433,6 +435,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           _ffvlEnabled = ffvlEnabled;
           _bomEnabled = bomEnabled;
           _wundergroundPwsEnabled = wundergroundPwsEnabled;
+          _holfuyEnabled = holfuyEnabled;
         });
       }
     } catch (e) {
@@ -1646,6 +1649,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           ffvlEnabled: _ffvlEnabled,
           bomEnabled: _bomEnabled,
           wundergroundPwsEnabled: _wundergroundPwsEnabled,
+          holfuyEnabled: _holfuyEnabled,
           airspaceTypes: airspaceTypes,
           icaoClasses: icaoClasses,
           maxAltitudeFt: _maxAltitudeFt,
@@ -1677,7 +1681,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   }
 
   /// Handle filter apply from dialog
-  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, bool weatherStationsEnabled, bool metarEnabled, bool nwsEnabled, bool pioupiouEnabled, bool ffvlEnabled, bool bomEnabled, bool wundergroundPwsEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
+  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, bool weatherStationsEnabled, bool metarEnabled, bool nwsEnabled, bool pioupiouEnabled, bool ffvlEnabled, bool bomEnabled, bool wundergroundPwsEnabled, bool holfuyEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
     try {
       // Update filter states
       final previousSitesEnabled = _sitesEnabled;
@@ -1690,6 +1694,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       final previousFfvlEnabled = _ffvlEnabled;
       final previousBomEnabled = _bomEnabled;
       final previousWundergroundPwsEnabled = _wundergroundPwsEnabled;
+      final previousHolfuyEnabled = _holfuyEnabled;
 
       // Update non-airspace states immediately
       setState(() {
@@ -1703,6 +1708,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         _ffvlEnabled = ffvlEnabled;
         _bomEnabled = bomEnabled;
         _wundergroundPwsEnabled = wundergroundPwsEnabled;
+        _holfuyEnabled = holfuyEnabled;
         _maxAltitudeFt = maxAltitudeFt;
       });
 
@@ -1720,6 +1726,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       await prefs.setBool('weather_provider_${WeatherStationSource.ffvl.name}_enabled', ffvlEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.bom.name}_enabled', bomEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.weatherUndergroundPws.name}_enabled', wundergroundPwsEnabled);
+      await prefs.setBool('weather_provider_${WeatherStationSource.holfuy.name}_enabled', holfuyEnabled);
 
       // Handle sites visibility changes
       if (!sitesEnabled && previousSitesEnabled) {
@@ -1801,7 +1808,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           _fetchWeatherStations();
         }
         LoggingService.action('MapFilter', 'weather_stations_enabled', {'will_fetch': currentZoom >= MapConstants.minForecastZoom});
-      } else if (weatherStationsEnabled && (metarEnabled != previousMetarEnabled || nwsEnabled != previousNwsEnabled || pioupiouEnabled != previousPioupiouEnabled || ffvlEnabled != previousFfvlEnabled || bomEnabled != previousBomEnabled || wundergroundPwsEnabled != previousWundergroundPwsEnabled)) {
+      } else if (weatherStationsEnabled && (metarEnabled != previousMetarEnabled || nwsEnabled != previousNwsEnabled || pioupiouEnabled != previousPioupiouEnabled || ffvlEnabled != previousFfvlEnabled || bomEnabled != previousBomEnabled || wundergroundPwsEnabled != previousWundergroundPwsEnabled || holfuyEnabled != previousHolfuyEnabled)) {
         // Weather station providers changed - refresh stations
         final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
         if (currentZoom >= MapConstants.minForecastZoom) {
@@ -1816,12 +1823,14 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           'ffvl_enabled': ffvlEnabled,
           'bom_enabled': bomEnabled,
           'wunderground_pws_enabled': wundergroundPwsEnabled,
+          'holfuy_enabled': holfuyEnabled,
           'metar_changed': metarEnabled != previousMetarEnabled,
           'nws_changed': nwsEnabled != previousNwsEnabled,
           'pioupiou_changed': pioupiouEnabled != previousPioupiouEnabled,
           'ffvl_changed': ffvlEnabled != previousFfvlEnabled,
           'bom_changed': bomEnabled != previousBomEnabled,
           'wunderground_pws_changed': wundergroundPwsEnabled != previousWundergroundPwsEnabled,
+          'holfuy_changed': holfuyEnabled != previousHolfuyEnabled,
         });
       }
 
@@ -2051,6 +2060,14 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                           forecastEnabled: _forecastEnabled,
                           weatherStations: _weatherStations,
                           stationWindData: _stationWindData,
+                          onStationReading: (key, wind) {
+                            // A Holfuy reading fetched on tap: fold it into the
+                            // same map the markers read, so the wind appears
+                            // behind the dialog that loaded it.
+                            if (mounted) {
+                              setState(() => _stationWindData[key] = wind);
+                            }
+                          },
                           weatherStationsEnabled: _weatherStationsEnabled,
                           onBoundsChanged: _onBoundsChanged,
                           showUserLocation: true,
@@ -2259,6 +2276,7 @@ class _DraggableFilterDialog extends StatefulWidget {
   final bool ffvlEnabled;
   final bool bomEnabled;
   final bool wundergroundPwsEnabled;
+  final bool holfuyEnabled;
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
@@ -2274,6 +2292,7 @@ class _DraggableFilterDialog extends StatefulWidget {
     bool ffvlEnabled,
     bool bomEnabled,
     bool wundergroundPwsEnabled,
+    bool holfuyEnabled,
     Map<String, bool> types,
     Map<String, bool> classes,
     double maxAltitudeFt,
@@ -2291,6 +2310,7 @@ class _DraggableFilterDialog extends StatefulWidget {
     required this.ffvlEnabled,
     required this.bomEnabled,
     required this.wundergroundPwsEnabled,
+    required this.holfuyEnabled,
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
@@ -2338,6 +2358,7 @@ class _DraggableFilterDialogState extends State<_DraggableFilterDialog> {
                 ffvlEnabled: widget.ffvlEnabled,
                 bomEnabled: widget.bomEnabled,
                 wundergroundPwsEnabled: widget.wundergroundPwsEnabled,
+                holfuyEnabled: widget.holfuyEnabled,
                 airspaceTypes: widget.airspaceTypes,
                 icaoClasses: widget.icaoClasses,
                 maxAltitudeFt: widget.maxAltitudeFt,
