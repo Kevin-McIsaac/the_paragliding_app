@@ -7,12 +7,14 @@ description: Run and write tests for this Flutter app, and diagnose CI/analyze f
 
 ## Commands
 
-**Agent shells need the environment exported first** — `flutter` is not on PATH and
-`~/.config` is read-only under the sandbox:
+**Agent shells need the environment exported first** — `flutter` is not on PATH, and the
+sandbox's read-only `$HOME` breaks both `~/.config/flutter` and the `~/.dart-tool` telemetry
+write. `XDG_CONFIG_HOME`/`XDG_DATA_HOME` redirect only the first, so suppress analytics too:
 
 ```bash
 export PATH="$HOME/flutter/bin:$PATH" \
-       XDG_CONFIG_HOME=/tmp/flutter-config XDG_DATA_HOME=/tmp/flutter-data
+       XDG_CONFIG_HOME=/tmp/flutter-config XDG_DATA_HOME=/tmp/flutter-data \
+       FLUTTER_SUPPRESS_ANALYTICS=true
 ```
 
 ```bash
