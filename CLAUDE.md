@@ -58,12 +58,14 @@ WU PWS session - three failed app starts and one wrong-directory analyze run;
    `adb: unknown command mdns`. The sandbox also makes `$HOME` read-only, so
    flutter tools die with `FileSystemException` against
    `.../.config/flutter` **or** `.../.dart-tool` - the second is what stops
-   `flutter devices` before it lists anything. For plain
+   `flutter devices` before it lists anything, and `XDG_*` does not redirect
+   it, so analyze/test also need `FLUTTER_SUPPRESS_ANALYTICS`. For plain
    analyze/test runs:
    ```bash
    export PATH="$HOME/flutter/bin:$HOME/android-sdk/platform-tools:$PATH" \
           ANDROID_HOME="$HOME/android-sdk" ANDROID_SDK_ROOT="$HOME/android-sdk" \
-          XDG_CONFIG_HOME=/tmp/flutter-config XDG_DATA_HOME=/tmp/flutter-data
+          XDG_CONFIG_HOME=/tmp/flutter-config XDG_DATA_HOME=/tmp/flutter-data \
+          FLUTTER_SUPPRESS_ANALYTICS=true
    ```
    **This export is needed whether or not the sandbox is off** - the PATH gap
    is a shell-environment issue, not a sandbox one (verified 2026-09-05:
