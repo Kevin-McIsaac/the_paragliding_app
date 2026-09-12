@@ -99,12 +99,17 @@ class HolfuyWeatherProvider implements WeatherStationProvider {
   }
 
   /// Stations inside [bounds], from the local catalogue. No network.
+  ///
+  /// Holfuy's positions come from a downloaded catalogue rather than a
+  /// point-based lookup, so the caller's [focusPoint] cannot change this answer
+  /// and is ignored - the parameter exists to satisfy the provider interface.
   @override
   Future<List<WeatherStation>> fetchStations(
     LatLngBounds bounds, {
     Function()? onApiCallStart,
     void Function(List<WeatherStation> stations, {bool passComplete})?
         onStationsUpdated,
+    LatLng? focusPoint,
   }) async {
     try {
       final catalogue =
