@@ -63,6 +63,25 @@ class FavoriteRow {
   const FavoriteRow(this.site, {this.isNested = false});
 }
 
+/// What one weather-provider progress event means for the map's loading
+/// overlay.
+///
+/// [NearbySitesScreenState.classifyProviderEvent] is the only thing that decides
+/// this, so the rule can be tested without pumping the map.
+enum ProviderProgressEvent {
+  /// The provider has begun API work: show it as loading.
+  start,
+
+  /// The provider finished: show the tick/cross, then dismiss it.
+  complete,
+
+  /// Stations came straight from a cache with no API call: show nothing.
+  cacheHit,
+
+  /// Nothing to do.
+  ignore,
+}
+
 class NearbySitesScreen extends StatefulWidget {
   /// Optional callback to reload data after database changes.
   /// Used by MainNavigationScreen to coordinate refreshes across all tabs.
@@ -571,6 +590,42 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     });
   }
 
+  /// Classify one provider progress event for the loading overlay.
+  ///
+  /// A terminal event ([passComplete]) has to be resolved *before* the
+  /// "no stations yet means a fresh start" rule, and only for a provider the
+  /// overlay is actually tracking. WU PWS queues its background passes, so a
+  /// terminal push can land after a newer fetch has already cleared
+  /// [_providersActuallyLoading] and [_providerStates]; when that viewport holds
+  /// no stations the push carries `stationCount == 0`, and reading it as a start
+  /// left the provider showing "loading" with no event left to clear it - the
+  /// spinner that never went away (seen live 2026-09-12 on Android and Linux,
+  /// on the WU PWS cache-first path).
+  @visibleForTesting
+  static ProviderProgressEvent classifyProviderEvent({
+    required bool isAlreadyLoading,
+    required bool hasVisibleState,
+    required bool success,
+    required int stationCount,
+    required bool passComplete,
+  }) {
+    if (passComplete) {
+      // Only a tracked provider has anything to resolve. An untracked terminal
+      // event is a cache hit, or a pass whose overlay entry a newer fetch has
+      // already reset - neither may synthesise a loading entry.
+      return isAlreadyLoading || hasVisibleState
+          ? ProviderProgressEvent.complete
+          : ProviderProgressEvent.ignore;
+    }
+    if (!isAlreadyLoading && success && stationCount == 0) {
+      return ProviderProgressEvent.start;
+    }
+    if (!isAlreadyLoading && stationCount > 0) {
+      return ProviderProgressEvent.cacheHit;
+    }
+    return ProviderProgressEvent.ignore;
+  }
+
   Future<void> _fetchWeatherStations() async {
     // Skip fetching if weather stations are disabled
     if (!_weatherStationsEnabled) {
@@ -628,8 +683,19 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
               // Check if this provider is already in the loading set
               final isAlreadyLoading = _providersActuallyLoading.contains(source);
 
-              // If not already loading and this is the initial call (stationCount=0, success=true)
-              if (!isAlreadyLoading && success && stationCount == 0) {
+              // See classifyProviderEvent: a terminal event is resolved before
+              // the "no stations yet means a fresh start" rule, or a queued
+              // background pass's final push is mistaken for a new start and
+              // leaves the provider loading forever.
+              final event = NearbySitesScreenState.classifyProviderEvent(
+                isAlreadyLoading: isAlreadyLoading,
+                hasVisibleState: _providerStates.containsKey(source),
+                success: success,
+                stationCount: stationCount,
+                passComplete: passComplete,
+              );
+
+              if (event == ProviderProgressEvent.start) {
                 // Provider is starting an API call
                 LoggingService.structured('PROVIDER_API_START', {
                   'provider': displayName,
@@ -642,7 +708,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
               }
               // Terminal event for a provider: completion of a blocking fetch
               // or the final push of a background pass.
-              else if (isAlreadyLoading && passComplete) {
+              else if (event == ProviderProgressEvent.complete) {
                 LoggingService.structured('PROVIDER_API_COMPLETE', {
                   'provider': displayName,
                   'success': success,
@@ -670,7 +736,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                 });
               }
               // Handle non-loading providers that return data immediately (cache hit)
-              else if (!isAlreadyLoading && stationCount > 0) {
+              else if (event == ProviderProgressEvent.cacheHit) {
                 LoggingService.structured('PROVIDER_CACHE_HIT', {
                   'provider': displayName,
                   'station_count': stationCount,
