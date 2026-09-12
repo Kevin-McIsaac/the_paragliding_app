@@ -1,5 +1,6 @@
-• Map improvements: wind stations appear faster when moving around the
-  map, and a loading indicator now shows while wind speed and direction
-  are being fetched
-• Wind data from Weather Underground stations fills in reliably when
-  browsing between areas
+• Holfuy stations are now a wind source on the nearby sites map, drawn
+  with their own peak-and-arc icon; tap one to fetch its current reading
+• Wind loads much faster when you open or pan the map, and the stations
+  at the site you are looking at now show their readings instead of
+  sitting on "wind loading..."
+• Fixed a spinner that could keep turning after you panned the map
