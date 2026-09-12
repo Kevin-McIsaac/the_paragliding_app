@@ -116,15 +116,24 @@ stations per call) while the map layer needs bbox coverage:
 
 1. A session cache holds every discovered station (`DiscoveredPwsStation`), including the
    `distanceKm` each had from the probe point that found it.
-2. For a viewport, sample points on a small grid (≤3×4, spacing ≈ 0.9 × the 12 km
-   coverage radius, capped at 12 probes). Points within the coverage radius of a *fresh*
-   known station are "covered".
-3. Only uncovered points are probed; results merge into the cache. Once an area has been
-   explored, panning back to it costs **zero API calls**.
-4. Wind readings come from `pws/observations/current` for stations whose reading is older
+2. For a viewport, **one probe at the viewport centre** (`_backgroundPass`). The earlier
+   ≤3×4 grid was retired: it spent up to 12 calls at 2 s each to learn what a single
+   centre probe already gives, because `location/near` returns the 10 *nearest* — exactly
+   what a z13-14 user sees.
+3. A viewport is "covered" when a fresh known station lies **inside it**, or when a recent
+   probe still speaks for it — its point is on screen, or within
+   `MapConstants.wuProbeCreditRadiusKm` (1 km) of the centre. Coverage is deliberately not
+   a fixed radius: the 10-nearest answer is only ~25% shared 2 km away and effectively
+   disjoint past 4 km (measured 2026-09-12), so a probe 10 km away must not suppress the
+   probe a viewport needs. Seen live the same day at Quinns Rocks: the last probe was
+   2.7 km away, WU_PWS_CACHE_HIT fired with `filtered_count=0`, and the layer stayed empty
+   while a probe at that centre returned 10 stations, all inside the viewport.
+4. Only uncovered viewports are probed; results merge into the cache. Once an area has been
+   explored, panning within it costs **zero API calls**.
+5. Wind readings come from `pws/observations/current` for stations whose reading is older
    than the 10-minute TTL. All calls pass a simple 2-second throttle to respect the
    30/minute rate limit.
-5. Stations with no `updateTimeUtc` within 2 hours are dropped as dead (QC status is shown
+6. Stations with no `updateTimeUtc` within 2 hours are dropped as dead (QC status is shown
    in the observation type but does not filter).
 
 UI: the PWS layer appears in the map filter dialog, nearby-sites screen, and about-screen

@@ -26,10 +26,10 @@ import 'weather_station_provider.dart';
 /// docs/PWS_STATION_DISCOVERY.md):
 ///
 /// - A persistent set of discovered stations is kept for the session.
-/// - A viewport is "covered" when its sample points all lie within
-///   [MapConstants.wuCoverageRadiusKm] of a known, fresh station - then zero
-///   API calls are made and stations come straight from the cache.
-/// - Otherwise only the uncovered sample points are probed and merged in.
+/// - A viewport is "covered" when a fresh known station lies **inside it**, or
+///   when the same area has been probed recently - then zero API calls are made
+///   and stations come straight from the cache.
+/// - Otherwise the viewport centre is probed once and the results merged in.
 ///
 /// Wind readings come from `pws/observations/current` (units=m → km/h
 /// natively). Stations whose `updateTimeUtc` is older than
@@ -313,24 +313,46 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     }
   }
 
-  /// The viewport is "covered" when its centre lies within the coverage
-  /// radius of a known fresh station, or within a short distance of a recent
-  /// probe point (prevents re-probing while panning inside a known area).
-  /// The probe-point credit expires: without this, a session two hours old
-  /// would consider an area covered while every cached station in it has
-  /// gone stale and dropped off the map - the view would stay empty forever.
+  /// The viewport is "covered" when a fresh known station lies inside it, or
+  /// when a recent probe still speaks for it (see below).
+  ///
+  /// The station test is **inside the bounds**, not within a radius of the
+  /// centre. The centre test marked a small high-zoom viewport covered by a
+  /// station it does not draw, so no probe ran and the view stayed empty. Seen
+  /// live 2026-09-12 at Quinns Rocks: a 6.5 km viewport whose nearest known
+  /// station was 7.8 km away logged WU_PWS_CACHE_HIT with filtered_count=0 and
+  /// showed no markers, while a probe at that centre returns 10 stations, all
+  /// inside the viewport.
+  ///
+  /// The probe-point credit is likewise **not** a fixed radius. `location/near`
+  /// answers with the 10 *nearest* stations, and measured against a real point
+  /// that answer is only ~25% shared 2 km away and effectively disjoint past
+  /// 4 km - so a probe 10.5 km away (the same live case, the last probe being
+  /// at -31.7688,115.6987) says nothing about this viewport. It counts only
+  /// while its point is still on screen, or while the view has merely crept
+  /// from it by [MapConstants.wuProbeCreditRadiusKm]. Both forms are needed:
+  /// the on-screen test scales with the viewport, the floor keeps a very tight
+  /// one from re-probing on a nudge.
+  ///
+  /// The credit expires: without this, a session two hours old would consider
+  /// an area covered while every cached station in it has gone stale and
+  /// dropped off the map - the view would stay empty forever.
   bool _isViewportCovered(LatLngBounds bounds) {
     final centre = _boundsCentre(bounds);
-    if (_isCovered(centre, discovered.values.where((s) => !s.isStale).toList())) {
+    final fresh = discovered.values.where((s) => !s.isStale);
+    if (fresh.any((s) => bounds.contains(LatLng(s.latitude, s.longitude)))) {
       return true;
     }
+    final probe = _lastProbePoint;
     final lastProbeAt = _lastProbeAt;
-    return _lastProbePoint != null &&
-        lastProbeAt != null &&
-        DateTime.now().difference(lastProbeAt) < probePointTrustTTL &&
-        _distanceKm(centre.latitude, centre.longitude,
-                _lastProbePoint!.latitude, _lastProbePoint!.longitude) <
-            MapConstants.wuCoverageRadiusKm;
+    if (probe == null || lastProbeAt == null) return false;
+    if (DateTime.now().difference(lastProbeAt) >= probePointTrustTTL) {
+      return false;
+    }
+    return bounds.contains(probe) ||
+        _distanceKm(centre.latitude, centre.longitude, probe.latitude,
+                probe.longitude) <
+            MapConstants.wuProbeCreditRadiusKm;
   }
 
   /// Centre of [bounds] - the natural "where is the user looking" anchor for
@@ -493,17 +515,6 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
 
   int get _freshCount =>
       discovered.values.where((s) => !s.isStale).length;
-
-  bool _isCovered(LatLng point, List<DiscoveredPwsStation> fresh) {
-    for (final station in fresh) {
-      if (_distanceKm(point.latitude, point.longitude, station.latitude,
-              station.longitude) <
-          MapConstants.wuCoverageRadiusKm) {
-        return true;
-      }
-    }
-    return false;
-  }
 
   /// Backing store for the discovered-station cache, so discovery survives
   /// an app restart - station locations are a property of the world, not of
