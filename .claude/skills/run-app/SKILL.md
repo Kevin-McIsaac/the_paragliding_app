@@ -232,7 +232,7 @@ that file **is** the readiness check. There is no status command and none is nee
 - **Verify the artifact, not the status.** "Started OK" means nothing on its own — read
   `dev_data/flutter.log` or look at a screenshot. The deleted `flutter_controller_enhanced`
   reported `Running / Pipe Responsive` for a process that had already exited, and set
-  `ERROR` by string-matching Flutter's own help text. See "Verifying work" in CLAUDE.md.
+  `ERROR` by string-matching Flutter's own help text. See the `verification` skill.
 - **A screenshot of a locked phone is the lock screen**, and it looks like a plausible
   capture (valid PNG, right dimensions). Unlock before capturing.
 - **Missing `env.json` fails silently** — FFVL weather, OpenAIP overlays and Cesium 3D go
