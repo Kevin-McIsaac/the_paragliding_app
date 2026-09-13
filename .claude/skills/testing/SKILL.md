@@ -7,15 +7,9 @@ description: Run and write tests for this Flutter app, and diagnose CI/analyze f
 
 ## Commands
 
-**Agent shells need the environment exported first** — `flutter` is not on PATH, and the
-sandbox's read-only `$HOME` breaks both `~/.config/flutter` and the `~/.dart-tool` telemetry
-write. `XDG_CONFIG_HOME`/`XDG_DATA_HOME` redirect only the first, so suppress analytics too:
-
-```bash
-export PATH="$HOME/flutter/bin:$PATH" \
-       XDG_CONFIG_HOME=/tmp/flutter-config XDG_DATA_HOME=/tmp/flutter-data \
-       FLUTTER_SUPPRESS_ANALYTICS=true
-```
+**Agent shells need the environment exported first** - `flutter` is not on PATH and the
+sandbox's read-only `$HOME` breaks its config writes. The export is in the global
+**`flutter-dev`** skill; run it before any command below.
 
 ```bash
 flutter analyze                              # run after complex, multi-file changes
@@ -110,12 +104,10 @@ cutting a release.
 
 ## Writing tests
 
-- Drive production code paths rather than recomputing an expected value inline - a test
-  that agrees only with itself isn't coverage. `test/statistics_match_log_book_test.dart`
-  is the pattern: it calls the same `getYearlyStatistics()` / `getAllFlights()` the
-  screens call.
-- Prove a regression test fails without the fix: revert the fix, run it, watch it go red.
-  A test that passes either way is worse than none.
+- The generic rules - drive production code paths, and prove a regression test fails
+  without the fix - are in the global **`verification`** skill.
+  `test/statistics_match_log_book_test.dart` is this repo's pattern for the first: it calls
+  the same `getYearlyStatistics()` / `getAllFlights()` the screens call.
 - For a schema migration, drive the migration function directly (`@visibleForTesting`)
   rather than duplicating its SQL in the test, where the two can drift apart - see
   `test/duration_backfill_test.dart`.

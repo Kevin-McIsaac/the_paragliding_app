@@ -17,65 +17,18 @@ implementation, so 3D screens show a "3D Map Not Available" placeholder on deskt
 
 ## 2. Start it
 
-> **Agent shells don't inherit the interactive environment.** Neither `flutter`
-> (`~/flutter/bin`) nor the current `adb` (`~/android-sdk/platform-tools`) is on PATH in
-> an agent shell, and the sandbox makes `$HOME` read-only, so flutter tools die with
-> `FileSystemException` against **`~/.config/flutter`** (analytics/network config) or
-> against **`~/.dart-tool`** (`dart-flutter-telemetry-session.json`). They fail
-> separately, and it is the second one that stops `flutter devices` before it lists
-> anything.
+> **Agent shells don't inherit the interactive environment.** The export every
+> `bin/dev_*.sh` call needs, the writable-`$HOME` recipe for `flutter devices`, and the
+> two-`adb` situation are in the **`flutter-dev`** global skill - read it first rather than
+> reconstructing them here. Two things worth repeating: prefix every call with that export,
+> and the PATH gap is **not** fixed by turning the sandbox off.
 >
-> **The PATH gap is NOT fixed by turning the sandbox off** - it is a shell
-> environment issue, not a sandbox issue. Prefix every `bin/dev_*.sh` call
-> with the export (verified 2026-09-05: sandbox off but no PATH export still
-> fails with `setsid: failed to execute flutter: No such file or directory`):
->
-> ```bash
-> export PATH="$HOME/flutter/bin:$HOME/android-sdk/platform-tools:$PATH" \
->        ANDROID_HOME="$HOME/android-sdk" ANDROID_SDK_ROOT="$HOME/android-sdk" \
->        XDG_CONFIG_HOME=/tmp/flutter-config XDG_DATA_HOME=/tmp/flutter-data
-> bin/dev_run.sh --background
-> ```
->
-> **`adb` must be the platform-tools one (37.0.0), not `/usr/bin`.** The system package at
-> `/usr/bin/adb` is Debian's **29.0.6**, `apt` has no newer candidate for it, and it
-> predates the `mdns` subcommand — so wireless-debugging commands die with
-> `adb: unknown command mdns`. `~/.bashrc` prepends platform-tools for interactive shells,
-> but agent shells are non-interactive `bash -c` and never read it, which is why the export
-> above spells the path out. **This machine also has the system-level fix** (installed
-> 2026-09-12): `/usr/local/bin/adb -> ~/android-sdk/platform-tools/adb`, and
-> `/usr/local/bin` precedes `/usr/bin` on PATH, so bare `adb` is 37.0.0 in *every* shell —
-> verified with no export set. See `docs/setup/WIRELESS_ADB_SETUP.md` to reinstall it.
->
-> **There are two `adb`s, and the Debian one is not fixable — don't try.** `/usr/bin/adb` is
-> Debian's `android-sdk-platform-tools` (apt-installed 2026-04-08, binary built 2023);
-> `~/android-sdk` is Google's SDK, the one Flutter uses, updatable with
-> `cmdline-tools/latest/bin/sdkmanager`. When bare `adb` misbehaves the fix is that symlink —
-> but an **agent shell cannot create it** (no working `sudo`; the sandbox sets
-> `no new privileges`), so ask the human instead of burning a cycle on it. Do **not** "fix"
-> the Debian one by removing it: `apt remove` drags `sqlite3`, `graphviz` and the USB udev
-> rules out with it (see `docs/setup/WIRELESS_ADB_SETUP.md`).
->
-> The same export line is all a sandboxed run needs (plain analyze/test only).
->
-> **`/tmp` does not persist between agent Bash calls, so never use it as `$HOME`.**
-> `XDG_CONFIG_HOME=/tmp/...` is safe because it is re-created inside the one call that
-> uses it, but a `/tmp`-based `$HOME` is gone by the next call and adb then fails with
-> `Cannot mkdir '/tmp/<name>/.android': No such file or directory` — which reads like a
-> broken SDK, not a vanished directory. When `flutter devices` needs a writable `$HOME`,
-> point it at a workspace-local one and carry adb's key over:
->
-> ```bash
-> REAL="$HOME"
-> HDIR="$PWD/dev_data/flutter-home"          # inside the gitignored dev_data/
-> mkdir -p "$HDIR/.android" && cp -a "$REAL/.android/." "$HDIR/.android/"
-> export HOME="$HDIR"
-> export PATH="$REAL/flutter/bin:$REAL/android-sdk/platform-tools:$PATH"
-> export ANDROID_HOME="$REAL/android-sdk"
-> ```
->
-> That is what makes `flutter devices` list a paired phone under a `workspace-write`
-> sandbox (verified 2026-09-12).
+> **`adb` must be the platform-tools one (37.0.0), not Debian's `/usr/bin/adb` 29.0.6**,
+> whose missing `mdns` subcommand breaks wireless debugging. The machine now has the
+> system-level symlink `/usr/local/bin/adb -> ~/android-sdk/platform-tools/adb` (installed
+> 2026-09-12), so bare `adb` is correct in every shell. Do **not** remove the Debian package
+> to "fix" it - `apt remove` drags real dependencies out. `flutter-dev` carries the detail;
+> `docs/setup/WIRELESS_ADB_SETUP.md` is this repo's reinstall guide.
 
 > **Run every `bin/dev_run.sh` with the sandbox disabled** (`dangerouslyDisableSandbox:
 > true`). This is not an adb-only rule — it applies to the plain desktop run too. The
@@ -279,7 +232,7 @@ that file **is** the readiness check. There is no status command and none is nee
 - **Verify the artifact, not the status.** "Started OK" means nothing on its own — read
   `dev_data/flutter.log` or look at a screenshot. The deleted `flutter_controller_enhanced`
   reported `Running / Pipe Responsive` for a process that had already exited, and set
-  `ERROR` by string-matching Flutter's own help text. See "Verifying work" in CLAUDE.md.
+  `ERROR` by string-matching Flutter's own help text. See the `verification` skill.
 - **A screenshot of a locked phone is the lock screen**, and it looks like a plausible
   capture (valid PNG, right dimensions). Unlock before capturing.
 - **Missing `env.json` fails silently** — FFVL weather, OpenAIP overlays and Cesium 3D go
