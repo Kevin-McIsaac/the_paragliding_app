@@ -94,15 +94,10 @@ gh run watch   # pick the run for the tag; do not hand-roll a poll loop
 
 Then, in this order:
 
-- **A `cancelled` or `failed` run may still have published.** Check the *Publish to Play
-  internal track* step's own conclusion, not the run's. A cancel landing after the upload
-  stops later jobs while the publish already went through - that is how versionCode 13 was
-  burned, and re-tagging on the assumption it failed burns another.
-
-  ```bash
-  gh run view <run-id> --json jobs \
-    -q '.jobs[].steps[] | select(.name|test("Play")) | "\(.name): \(.conclusion)"'
-  ```
+- **A `cancelled` or `failed` run may still have published** - check the *Publish to Play
+  internal track* step's own conclusion, not the run's. That is how versionCode 13 was
+  burned, and re-tagging on the assumption it failed burns another. The generic rule and
+  the exact `gh run view` command are in the **`gh-pr`** and **`verification`** skills.
 
 - Confirm the GitHub Release exists with the APK attached: `gh release view v1.0.8+20`.
 - Optionally check provenance on the downloaded APK:

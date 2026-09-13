@@ -17,8 +17,31 @@ APP_DIR="$REPO_ROOT/the_paragliding_app"
 MAIN="$(git -C "$REPO_ROOT" worktree list --porcelain | awk '/^worktree/{print $2; exit}')"
 MAIN_APP_DIR="$MAIN/the_paragliding_app"
 
+# The DSH skill bridge is gitignored, so a fresh worktree has no .dsh/skills and every
+# project skill disappears from the session catalog. Recreate it with relative links so
+# they resolve inside this worktree instead of pointing back at the main checkout.
+ensure_skill_bridge() {
+  local root="$1" skill_dir name link
+  mkdir -p "$root/.dsh/skills"
+  for skill_dir in "$root"/.claude/skills/*/; do
+    [[ -d "$skill_dir" ]] || continue
+    name="$(basename "$skill_dir")"
+    link="$root/.dsh/skills/$name"
+    if [[ -L "$link" ]]; then
+      echo "skip .dsh/skills/$name (already linked)"
+    elif [[ -e "$link" ]]; then
+      echo "WARNING: .dsh/skills/$name exists and is not a symlink - leaving it" >&2
+    else
+      ln -s "../../.claude/skills/$name" "$link"
+      echo "linked .dsh/skills/$name -> ../../.claude/skills/$name"
+    fi
+  done
+}
+
+ensure_skill_bridge "$REPO_ROOT"
+
 if [[ "$MAIN" == "$REPO_ROOT" ]]; then
-  echo "Already in the main checkout ($REPO_ROOT) - nothing to bootstrap." >&2
+  echo "Already in the main checkout ($REPO_ROOT) - skill bridge ensured, nothing else to bootstrap." >&2
   exit 0
 fi
 
