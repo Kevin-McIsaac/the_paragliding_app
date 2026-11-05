@@ -57,7 +57,7 @@ dependencies:
   csv: ^8.0.0               # Site catalogue parsing - guide prose contains
                             # commas, quotes and hard line breaks
   connectivity_plus: ^7.0.0 # Network connectivity detection - WASM support & fixes
-  url_launcher: ^6.3.2      # Open external URLs for OSM links
+  url_launcher: ^6.3.3      # Open external URLs for OSM links
   logger: ^2.6.1            # Structured logging framework
   crypto: ^3.0.5            # SHA256 hashing for cache keys
   # webview_flutter: ^4.4.0   # WebView for 3D Cesium integration (replaced with flutter_inappwebview)
