@@ -25,6 +25,9 @@ const MARKER = '<!-- generic-ai-review -->';
 // Generated, binary, and local-only paths add tokens without adding review value.
 const SKIP_FILE = [
   /^pubspec\.lock$/,
+  /^env\.json$/,
+  /(^|\/)key\.properties$/,
+  /^\.env/,
   /\.g\.dart$/,
   /\.freezed\.dart$/,
   /(^|\/)build\//,
@@ -172,6 +175,10 @@ async function main() {
       '::notice::PR review is not configured. Set REVIEW_API_URL, REVIEW_MODEL, and REVIEW_API_KEY.',
     );
     return;
+  }
+
+  if (!/^https:\/\//i.test(url)) {
+    throw new Error('REVIEW_API_URL must start with https://');
   }
 
   const pr = (process.env.PR_NUMBER ?? '').trim();

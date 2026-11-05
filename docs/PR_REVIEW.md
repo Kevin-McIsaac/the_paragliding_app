@@ -49,7 +49,8 @@ Draft PRs and fork PRs are skipped. A fork PR has no access to repository secret
 ## What it does
 
 1. Reads the PR title, body, and diff with `gh`.
-2. Removes lockfiles, generated files, builds, images, and local data.
+2. Removes lockfiles, generated files, builds, images, local data, and secret files
+   (`env.json`, `key.properties`).
 3. Caps the diff and says when it truncated.
 4. Reads `AGENTS.md` for project rules.
 5. Calls the endpoint with a fixed review prompt.
@@ -67,6 +68,7 @@ commands.
 - The diff leaves GitHub and goes to the provider. Use a provider and data policy that
   fit the repository.
 - The script sends no secrets. It reads `AGENTS.md` and the PR diff only.
+- The script requires an `https://` URL. It refuses a plaintext endpoint.
 - The API key is a repository secret and is masked in logs.
 - The review comment is public to everyone who can read the PR.
 

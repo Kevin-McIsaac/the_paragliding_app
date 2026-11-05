@@ -100,7 +100,7 @@ Paths in this table and in Code Layout are relative to `the_paragliding_app/`.
 | Hot reload fails | State corruption | Use `R` (hot restart) instead of `r` |
 | App won't start | Already running | `kill "$(cat dev_data/flutter.pid)"`, then start again |
 | Hot reload does nothing | App not actually running | `kill -0 "$(cat dev_data/flutter.pid)"` - no pid file means it exited |
-| `Gtk-WARNING cannot open display: :0` | DSH hides the X11 socket - the machine is not headless | Try the Wayland socket, then escalate once (see the `sandbox-setup` skill) |
+| `Gtk-WARNING cannot open display: :0` | DSH hides the X11 socket - the machine is not headless | Use the Wayland socket (`sandbox-setup` skill), then escalate once |
 | Build dies on `Read-only file system` in `/tmp` or `~/.local/share/kotlin` | DSH sandbox filesystem policy | Use the `flutter-dev` writable-HOME export, then escalate once (see the `sandbox-setup` skill) |
 
 ## Project Overview
@@ -140,11 +140,9 @@ skill.
 This marker is the local instance of the global **`verification`** rule: the presence of the
 marker is evidence, and a log that merely stops is not.
 
-**Agent definitions in `.claude/agents/` are not auto-loaded in DSH.** The
-`flutter-log-analyzer` skill points at `.claude/agents/flutter-log-analyzer.md`. Load the
-skill, read that file, and follow it. Pass the file content and the log path to a subagent
-when the log is large. Project skills live in `.agents/skills/`, so load them with the
-`skill` tool.
+**The `flutter-log-analyzer` skill contains its agent definition in `agent.md`.** Load the
+skill and follow it. Pass the agent file and the log path to a subagent when the log is
+large. Project skills live in `.agents/skills/`, so load them with the `skill` tool.
 
 ### Logging patterns
 
@@ -253,7 +251,7 @@ tile layer only.** When airspace breaks, check the bucket, not the key.
 **See the `git-worktree` global skill** for the portable mechanics (create from
 `origin/main`, bootstrap, merge, `-D` cleanup, proving a merge landed) and the **`worktree`
 project skill** for this repo's `bin/setup_worktree.sh`, the gitignored-file traps and the
-Claude Code shared-checkout guards. Do not duplicate either here.
+DSH shared-checkout rule. Do not duplicate either here.
 
 Worktrees live in `.claude/worktrees/` (gitignored), branched from `origin/main`.
 

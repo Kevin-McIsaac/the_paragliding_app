@@ -5,7 +5,7 @@ This repo used Claude Code until 2026-11. DSH (DeepSeek Harness) is the current 
 ## Active under DSH
 
 - `.agents/skills/` - project skills. DSH scans this directory directly.
-- `.claude/agents/flutter-log-analyzer.md` - read through the `flutter-log-analyzer` skill.
+- `.agents/skills/flutter-log-analyzer/agent.md` - the agent definition.
 - `.claude/worktrees/` - worktree path used by the `git-worktree` skill.
 
 ## Inactive, kept in place

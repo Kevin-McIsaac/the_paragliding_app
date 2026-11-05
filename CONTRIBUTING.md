@@ -39,4 +39,4 @@ so a whole-tree format check is not part of CI.
 - `dev_data/` (real flight data and local app state)
 - `env.json` (API keys)
 - `upload-keystore*.jks` and `upload-cert*.pem`
-- `.dsh/` (local skill bridge)
+- `.dsh/` (DSH local state)

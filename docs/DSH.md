@@ -21,7 +21,7 @@ checkout it prints a message and exits.
 |---|---|
 | `AGENTS.md` | Project instructions. |
 | `.agents/skills/*` | Skill catalog. Load one with the `skill` tool. |
-| `.claude/agents/flutter-log-analyzer.md` | Read through the `flutter-log-analyzer` skill. |
+| `.agents/skills/flutter-log-analyzer/agent.md` | The agent definition. Read through the skill. |
 | `~/.dsh/skills` | Global skills (dotfiles). The project skills refer to `flutter-dev`, `git-worktree`, and `verification`. |
 | `.claude/worktrees/` | Worktree path used by the `git-worktree` skill. |
 | `bin/setup_worktree.sh` | Worktree bootstrap. |
@@ -31,7 +31,7 @@ checkout it prints a message and exits.
 | Claude Code feature | DSH behavior |
 |---|---|
 | `.claude/skills/` | Moved to `.agents/skills/`. |
-| `.claude/agents/*.md` | Not discovered. The `flutter-log-analyzer` skill points at the file. |
+| `.claude/agents/*.md` | Removed. The agent definition lives inside the skill. |
 | `worktree.bgIsolation` | Claude-only. |
 | `.claude/hooks/*` | Claude `PreToolUse` hooks do not run. |
 | Permission allowlist | No equivalent. DSH approvals are one-shot and carry no command arguments. |
