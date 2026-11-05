@@ -37,35 +37,35 @@ dependencies:
   
   # Core dependencies for The Paragliding App
   async: ^2.13.1            # Async utilities including CancelableOperation
-  sqflite: ^2.4.2           # Local SQLite database - platform architecture updates
-  sqflite_common_ffi: ^2.3.6 # SQLite for desktop platforms - latest stable version
+  sqflite: ^2.4.5           # Local SQLite database - platform architecture updates
+  sqflite_common_ffi: ^2.4.5 # SQLite for desktop platforms - latest stable version
   shared_preferences: ^2.5.6 # Settings storage - new async APIs
-  flutter_map: ^8.2.1         # Cross-platform map visualization with OpenStreetMap
+  flutter_map: ^8.3.2         # Cross-platform map visualization with OpenStreetMap
   flutter_map_dragmarker: ^8.0.3  # Draggable markers for flutter_map
   flutter_map_marker_cluster: ^8.2.2  # Marker clustering for flutter_map
   geobase: ^1.1.0  # Modern GeoJSON parsing and geospatial data handling for airspace data
   latlong2: ^0.9.1            # Coordinate handling for flutter_map
-  file_picker: ^10.3.1      # IGC file import - minor improvements
-  receive_sharing_intent: ^1.8.1  # Handle IGC files shared from other apps
-  fl_chart: ^1.0.0         # Charts for altitude/climb rate
-  intl: ^0.20.2             # Date/time formatting
+  file_picker: ^12.0.0-beta.1      # IGC file import - minor improvements
+  receive_sharing_intent: ^1.9.0  # Handle IGC files shared from other apps
+  fl_chart: ^1.3.0         # Charts for altitude/climb rate
+  intl: ^0.20.3             # Date/time formatting
   multi_dropdown: ^3.0.1    # Multi-select dropdown with search and chips
   path: ^1.8.0              # Database path utilities
-  path_provider: ^2.1.5     # App directory paths - bug fixes & stability
-  timezone: ^0.10.1         # Timezone database and lookup
+  path_provider: ^2.1.6     # App directory paths - bug fixes & stability
+  timezone: ^0.11.2         # Timezone database and lookup
   xml: ^6.5.0               # XML/KML parsing for paragliding sites
   csv: ^8.0.0               # Site catalogue parsing - guide prose contains
                             # commas, quotes and hard line breaks
-  connectivity_plus: ^7.0.0 # Network connectivity detection - WASM support & fixes
+  connectivity_plus: ^7.3.1 # Network connectivity detection - WASM support & fixes
   url_launcher: ^6.3.3      # Open external URLs for OSM links
-  logger: ^2.6.1            # Structured logging framework
-  crypto: ^3.0.5            # SHA256 hashing for cache keys
+  logger: ^2.8.0            # Structured logging framework
+  crypto: ^3.0.8            # SHA256 hashing for cache keys
   # webview_flutter: ^4.4.0   # WebView for 3D Cesium integration (replaced with flutter_inappwebview)
   # webview_flutter_android: ^3.13.0  # Android-specific WebView features
   # webview_flutter_wkwebview: ^3.10.0  # iOS-specific WebView features
   flutter_inappwebview: ^6.1.5  # Better WebView with CORS bypass capabilities and Android 13+ dark mode support
-  geolocator: ^14.0.2       # Device location access for nearby sites feature
-  package_info_plus: ^9.0.1 # App version/build number shown on the About screen
+  geolocator: ^14.1.2       # Device location access for nearby sites feature
+  package_info_plus: ^10.2.2 # App version/build number shown on the About screen
 
   http: ^1.2.2              # HTTP client - pinned from "any" to stable
   clipper2: ^0.0.3          # Polygon boolean operations (union, intersection, difference)
