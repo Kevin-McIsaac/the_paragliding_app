@@ -21,15 +21,16 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
   issues: write
 
 jobs:
   review:
     name: Review
-    # Drafts are skipped. Fork PRs have no secrets, so they are skipped too.
-    # A `labeled` event runs only for the ai-review label.
+    # Dependabot PRs, drafts, and fork PRs are skipped. A `labeled` event runs
+    # only for the ai-review label.
     if: >-
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       (github.event.action != 'labeled' || github.event.label.name == 'ai-review')
