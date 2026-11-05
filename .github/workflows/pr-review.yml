@@ -21,7 +21,7 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
   issues: write
 
 jobs:
@@ -41,6 +41,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Check review script syntax
+        run: node --check scripts/pr_review.mjs
 
       - name: Review the diff
         env:
