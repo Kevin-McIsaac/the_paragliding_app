@@ -70,7 +70,7 @@ commands.
   fit the repository.
 - The script sends no secrets. It reads `AGENTS.md` and the PR diff only.
 - The workflow runs `node --check scripts/pr_review.mjs` before the review step.
-- The workflow token has `contents: read`, `pull-requests: read`, and `issues: write`.
+- The workflow token has `contents: read`, `pull-requests: write`, and `issues: write`.
 - The script requires an `https://` URL. It refuses a plaintext endpoint.
 - The API key is a repository secret and is masked in logs.
 - The review comment is public to everyone who can read the PR.
