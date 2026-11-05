@@ -69,7 +69,7 @@ dependencies:
 
   http: ^1.2.2              # HTTP client - pinned from "any" to stable
   clipper2: ^0.0.3          # Polygon boolean operations (union, intersection, difference)
-  flutter_markdown_plus: ^1.0.5  # Markdown rendering for user manual
+  flutter_markdown_plus: ^1.0.12  # Markdown rendering for user manual
 dev_dependencies:
   flutter_test:
     sdk: flutter
