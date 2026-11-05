@@ -1,3 +1,26 @@
+# Claude Code PR review (retired)
+
+`ai-review.yml` ran on `pull_request` and used `anthropics/claude-code-action@v1`
+with Z.ai's Anthropic-compatible endpoint. It required the `ZHIPU_API_KEY` secret.
+
+The workflow was removed on 2026-11-05 because this repo uses DSH. No automated
+AI review runs now.
+
+## Why it was not reliable
+
+- The action was pinned to `@v1`, a movable tag. The rest of this repo pins
+  actions to commit SHAs. See the note at the top of `build.yml`.
+- The job requested `pull-requests: read` and `issues: read`, but it ran
+  `gh pr comment`. Creating a PR comment needs `pull-requests: write` or
+  `issues: write`, so the comment step could fail with 403.
+- It requested `id-token: write`, which the action did not use.
+- It had no concurrency group, timeout, fork guard, path filter, or diff cap.
+- It ran on every `synchronize`, so each push started a new review.
+- It was tied to one provider and one model.
+
+## The old workflow
+
+```yaml
 name: AI Code Review
 
 # Automated PR review using the GLM Coding Plan (Z.ai) through
@@ -57,3 +80,13 @@ jobs:
             Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
 
           claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
+```
+
+## If it is restored
+
+- Pin `actions/checkout` and the review action to commit SHAs.
+- Grant `contents: read`, `pull-requests: write`, and `issues: write`.
+- Add `concurrency`, `timeout-minutes`, and a fork guard.
+- Point the prompt at `AGENTS.md`, not `CLAUDE.md`.
+- Add a diff cap and an idempotent comment marker.
+- Remove the unused `ZHIPU_API_KEY` secret if the workflow stays retired.

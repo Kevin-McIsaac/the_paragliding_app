@@ -85,7 +85,7 @@ Core Services:
   - LRU cache for performance
   - Ensures consistent data (trimmed, zero-based indexing)
 
-- **`LoggingService`** - Centralized, Claude-optimized logging
+- **`LoggingService`** - Centralized, structured logging
   - Structured logging with file:line references
   - Performance metrics tracking
   - Error reporting with context

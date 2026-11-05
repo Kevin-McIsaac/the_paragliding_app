@@ -17,7 +17,7 @@ class LoggingService {
   // Duplicate operation detection
   static final Set<String> _recentOperations = <String>{};
 
-  // Claude-optimized logger with enhanced readability and navigation
+  // Structured logger with enhanced readability and navigation
   static final Logger _logger = Logger(
     // Profile builds are used for performance measurement, so they need the
     // same [P]/[D] output as debug - only release stays quiet
@@ -35,7 +35,7 @@ class LoggingService {
     // not one line of ours. ProductionFilter is a plain `event.level >= level`,
     // so the level gate does the filtering it looks like it does.
     filter: ProductionFilter(),
-    printer: ClaudeLogPrinter(), // Always use Claude-optimized format
+    printer: ClaudeLogPrinter(), // Always use the structured format
   );
 
   /// Log debug information with smart filtering for routine operations
@@ -193,7 +193,7 @@ class LoggingService {
   }
 
   // Performance thresholds in milliseconds, keyed by the operation name passed
-  // to [performance]. Local work uses CLAUDE.md's targets; network and
+  // to [performance]. Local work uses AGENTS.md's targets; network and
   // user-initiated maintenance work uses the point at which the wait is worth
   // reporting rather than a target it can never meet. Names built at the call
   // site (`'BOM ${state.code} parsing'`, `'CESIUM $metric'`, the

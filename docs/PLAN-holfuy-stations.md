@@ -229,7 +229,7 @@ Mirrors the existing `sites.csv` path in
 
 ## Phase 4 - tests
 
-Read `.claude/skills/testing/SKILL.md` before writing these; fixtures go
+Read `.agents/skills/testing/SKILL.md` before writing these; fixtures go
 through `TestHelpers.fixturePath`, the database stays in memory.
 
 1. Station-file parse: a fixture of the published file yields the right count,

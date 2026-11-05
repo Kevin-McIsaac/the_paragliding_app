@@ -89,7 +89,7 @@ unzip platform-tools-latest-linux.zip
 >
 > Afterwards bare `adb` is 37.0.0 in **every** shell, non-interactive ones included, so the
 > export in the `run-app` skill is belt-and-braces rather than load-bearing. An **agent
-> shell cannot create it** (no working `sudo` — see `CLAUDE.md` item 3), so this is a
+> shell cannot create it** (no working `sudo` — see `AGENTS.md` item 3), so this is a
 > one-time job for the human in their own terminal; re-run it if `command -v adb` ever
 > points at `/usr/bin` again. The link survives `sdkmanager` updates of platform-tools but
 > **dangles if `~/android-sdk/platform-tools` is deleted**, and

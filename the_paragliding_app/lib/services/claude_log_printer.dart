@@ -1,7 +1,7 @@
 import 'package:logger/logger.dart';
 
-/// Custom log printer optimized for Claude Code readability
-/// Provides structured, parseable output with file locations
+/// Custom log printer for structured, parseable output
+/// Provides file locations for each entry
 class ClaudeLogPrinter extends LogPrinter {
   static final _startTime = DateTime.now();
   static const _levelPrefixes = {

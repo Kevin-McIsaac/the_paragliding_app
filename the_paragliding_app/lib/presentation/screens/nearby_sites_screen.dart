@@ -1250,7 +1250,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       }
     }
 
-    // Summary logging for Claude analysis
+    // Summary logging for analysis
     if (calculated > 0 || forceRecalculation) {
       LoggingService.structured('FLYABILITY_UPDATE', {
         'total_sites': _displayedSites.length,

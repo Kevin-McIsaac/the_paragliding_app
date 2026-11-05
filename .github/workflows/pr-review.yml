@@ -1,0 +1,53 @@
+name: PR Review
+
+# Advisory review through any OpenAI-compatible chat completions endpoint.
+# The script posts one comment and updates it in place on a re-run.
+#
+# Trigger: a new PR, a PR marked ready, a reopen, or the `ai-review` label.
+# Not on every push. To re-run, remove and add the `ai-review` label.
+#
+# Requires repository variables REVIEW_API_URL and REVIEW_MODEL, and the
+# REVIEW_API_KEY secret. Without them the job prints a notice and exits 0.
+# See docs/PR_REVIEW.md.
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened, labeled]
+
+# One review per PR. A newer run replaces an older one.
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    name: Review
+    # Drafts are skipped. Fork PRs have no secrets, so they are skipped too.
+    # A `labeled` event runs only for the ai-review label.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'labeled' || github.event.label.name == 'ai-review')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Review the diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REVIEW_API_URL: ${{ vars.REVIEW_API_URL }}
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
+          REVIEW_API_KEY: ${{ secrets.REVIEW_API_KEY }}
+          REVIEW_MAX_DIFF: ${{ vars.REVIEW_MAX_DIFF }}
+        run: node scripts/pr_review.mjs
