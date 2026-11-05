@@ -21,7 +21,7 @@ implementation, so 3D screens show a "3D Map Not Available" placeholder on deskt
 > `bin/dev_*.sh` call needs, the writable-`$HOME` recipe for `flutter devices`, and the
 > two-`adb` situation are in the **`flutter-dev`** global skill - read it first rather than
 > reconstructing them here. Two things worth repeating: prefix every call with that export,
-> and the PATH gap is **not** fixed by turning the sandbox off.
+> and the PATH gap is **not** fixed by a wider sandbox mode.
 >
 > **`adb` must be the platform-tools one (37.0.0), not Debian's `/usr/bin/adb` 29.0.6**,
 > whose missing `mdns` subcommand breaks wireless debugging. The machine now has the
@@ -30,31 +30,21 @@ implementation, so 3D screens show a "3D Map Not Available" placeholder on deskt
 > to "fix" it - `apt remove` drags real dependencies out. `flutter-dev` carries the detail;
 > `docs/setup/WIRELESS_ADB_SETUP.md` is this repo's reinstall guide.
 
-> **Run every `bin/dev_run.sh` with the sandbox disabled** (`dangerouslyDisableSandbox:
-> true`). This is not an adb-only rule — it applies to the plain desktop run too. The
-> sandbox reaches neither the X11 socket nor the phone's LAN address, and in both cases
-> the failure reads as a missing display or a missing phone rather than as a permissions
-> problem, so it gets misdiagnosed every time. Same for `bin/dev_reload.sh`,
-> `bin/dev_logs.sh`, `bin/dev_screenshot.sh`, and any `adb` command.
->
-> **Scope: this section is about Claude Code's bubblewrap sandbox.** It does not describe
-> DSH's `workspace-write` policy, which does **not** block the LAN — verified 2026-09-12,
-> when `adb mdns services`, `adb pair`, `adb connect`, `adb devices -l` and
-> `flutter devices` all succeeded against the Pixel with the sandbox on. Try a sandboxed
-> call before escalating for permission; a pre-emptive escalation interrupts the user for
-> a grant that is usually unnecessary. `/sandbox` manages the allowlist.
+> **Under DSH, try the command first.** The `workspace-write` sandbox does not block the
+> LAN, so `adb` and `bin/dev_run.sh` usually work. The sandbox hides the X11 socket and
+> `~/flutter` is outside the workspace. If a command fails, retry it once with
+> `sandbox_permissions` and a justification. See the `sandbox-setup` skill.
 >
 > | you see | it is | do |
 > |---|---|---|
-> | `cannot open display: :0` | the sandbox, hiding X11 | re-run with the sandbox off |
-> | `Network is unreachable` | the sandbox, hiding the LAN | re-run with the sandbox off |
-> | `flutter pid N is not visible` | the sandbox's own PID namespace | re-run with the sandbox off |
+> | `cannot open display: :0` | the sandbox, hiding X11 | use the Wayland socket, then escalate once |
+> | `Network is unreachable` | the network, not the sandbox | check the phone or the host route |
+> | `flutter pid N is not visible` | the sandbox's private PID namespace | check `dev_data/flutter.log`; the app may still run |
 > | `No route to host` | genuinely the network | phone asleep or off Wi-Fi — see below |
 >
 > The sandbox runs in its own PID namespace, so a healthy app's pid is invisible inside
-> it and `kill -0` fails exactly as it would for a dead one. Nothing distinguishes the
-> two from in there — which is why `bin/dev_screenshot.sh` names both possibilities
-> instead of declaring the app dead.
+> it and `kill -0` fails exactly as it would for a dead one. Check the log marker before
+> you declare the app dead.
 >
 > There **is** a display. Do not conclude the environment is headless and go looking for
 > `xvfb` — that has burned a whole verification cycle more than once.
@@ -304,8 +294,7 @@ adb -s "$DEV" shell input keyevent KEYCODE_BACK    # 4=back, 3=home, 111=escape
 adb -s "$DEV" exec-out screencap -p > dev_data/screenshot.png
 ```
 
-Under Claude Code this needs the sandbox off, like everything else that reaches the phone;
-under DSH it works as-is — see the scoping note at the end of the wireless section.
+This works under DSH as-is. The sandbox does not block the LAN.
 
 - **Coordinates are device pixels, and adb will not convert them for you** — unlike
   `dev_input.sh`. The Pixel 9 is 1080x2424 px at dpr 2.625, so a widget at 200dp from the
@@ -396,23 +385,9 @@ absent phone and are not:
 - **`failed to connect` while mdns advertises it, on an open port.** The host is not paired;
   run `adb pair` — see "A third case looks like the second" above.
 
-### adb over the LAN needs the sandbox off — under Claude Code only
+### adb over the LAN
 
-Under Claude Code, agent Bash commands run inside a **bubblewrap sandbox** whose network
-allowlist covers pub.dev, GitHub and the app's APIs — **not the phone's LAN address**.
-Anything that has to reach the phone over Wi-Fi fails there with:
-
-```
-failed to connect to '192.168.86.99:5555': Network is unreachable
-```
-
-`Network is unreachable` is that sandbox. `No route to host` is the network. Re-run with the
-sandbox disabled — that includes `bin/dev_run.sh -d "<device>"`, which talks to the phone
-right through the build-install-attach cycle, not only at connect time. `/sandbox` manages
-the allowlist if this becomes routine.
-
-**Under DSH this section does not apply** (verified 2026-09-12): with the `workspace-write`
-sandbox on, `adb mdns services`, `adb pair 192.168.86.144:39267 <code>`,
-`adb connect 192.168.86.144:44457`, `adb devices -l` and `flutter devices` all worked. The
-commands to disable the sandbox are in §2 with the same scoping note — read it before
-escalating, and prefer one sandboxed attempt over an approval prompt.
+Under DSH, the sandbox does not block the LAN. With `workspace-write` on, `adb mdns
+services`, `adb pair`, `adb connect`, `adb devices -l`, and `flutter devices` all worked
+(verified 2026-09-12). Try a sandboxed call before escalating. If `Network is unreachable`
+appears, the host network changed, not the sandbox.

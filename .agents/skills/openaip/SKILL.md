@@ -17,7 +17,7 @@ debugging time.
 anywhere. If you are looking for airports, navaids or reporting points — they are not
 implemented; no service fetches them.
 
-> Both CLAUDE.md and an earlier version of this skill described an `AviationDataService`
+> Both AGENTS.md and an earlier version of this skill described an `AviationDataService`
 > fetching `/airports`, `/navaids` and `/reporting-points` from `api.core.openaip.net`,
 > with `[AIRPORTS_API_REQUEST]` log tags. None of that exists in `lib/` — no such class,
 > no such call, no such tag. Treat it as a design that was documented and never built.

@@ -1,6 +1,6 @@
 ---
 name: worktree
-description: This repo's worktree specifics - bootstrapping a fresh worktree with bin/setup_worktree.sh (env.json and android/key.properties fail silently if skipped), and the shared-checkout isolation guards (worktree.bgIsolation and guard-shared-checkout.sh). Use alongside the global git-worktree skill when setting up, or cleaning up, a worktree for this app.
+description: This repo's worktree bootstrap with bin/setup_worktree.sh and the DSH shared-checkout rule. Use alongside the global git-worktree skill when setting up or cleaning up a worktree for this app.
 ---
 
 # Worktrees in this repo
@@ -22,9 +22,9 @@ bin/setup_worktree.sh
 ```
 
 It copies `env.json` and `android/key.properties` from the main checkout, runs
-`flutter pub get`, creates `dev_data/`, and rebuilds the `.dsh/skills/` symlink bridge -
-without which every project skill disappears from the session catalog inside a worktree.
-Re-seed `dev_data/igc` only if the task needs the app to actually run.
+`flutter pub get`, and creates `dev_data/`. Project skills live in `.agents/skills/`, so
+the script does not touch the catalog. Re-seed `dev_data/igc` only if the task needs the
+app to actually run.
 
 The two file copies fail **silently**, which is why the script exists:
 
@@ -46,17 +46,11 @@ The two file copies fail **silently**, which is why the script exists:
 
 ## Why isolation here: several sessions share one checkout
 
-Background jobs, plus whatever you have open interactively, often share this one checkout.
-Two guards keep them off each other:
+Background jobs and the interactive session often share this one checkout.
 
-- `worktree.bgIsolation: "worktree"` (`.claude/settings.json`) blocks Edit/Write in the
-  shared checkout from a background session until it calls EnterWorktree.
-- `.claude/hooks/guard-shared-checkout.sh` covers what that misses. bgIsolation does not
-  gate **Bash**, and on 2026-08-04 a background job that was correctly isolated for its
-  edits still ran `git checkout`/`reset` against the shared checkout, switching the branch
-  out from under another session mid-rebase. The hook asks before a background session runs
-  a ref-moving git command outside a worktree. Interactive sessions are never gated, and
-  read-only git (`status`/`log`/`diff`/`fetch`) passes untouched.
+DSH has no guard. A background bash job or a subagent can run `git checkout`, `switch`, or
+`reset` in the shared checkout without a prompt. The rule replaces the guard: run
+ref-moving git commands in a worktree, not in the shared checkout.
 
-If you see that prompt, the honest question is whether the command belongs in a worktree
-instead. Approving is fine when you asked for it.
+The retired Claude Code guards (`worktree.bgIsolation` and the `PreToolUse` hook) and the
+2026-08-04 branch-switch incident are in `docs/archive/claude-code/worktree.md`.

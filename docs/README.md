@@ -16,16 +16,21 @@ Welcome to The Paragliding App documentation. All documentation is organized in 
 - **[Technical Design](TECHNICAL_DESIGN.md)** - Comprehensive technical architecture document
 - **[Functional Specification](FUNCTIONAL_SPECIFICATION.md)** - Complete feature requirements and specifications
 
-### Developer References (Claude Code)
+### Developer References
 
 - **[IGC Trimming](IGC_TRIMMING.md)** - Flight track data processing and trimming logic
 - **[Timestamps](TIMESTAMPS.md)** - UTC/local timezone conversion handling
 - **[Database](DATABASE.md)** - Migrations, schema-change process, clearing dev data
 - **[Site Catalogue Requirements](SITE_CATALOGUE_REQUIREMENTS.md)** - Bundled site catalogue rules
 - **[Adding Weather Providers](ADDING_WEATHER_PROVIDERS.md)** - Guide to integrating new weather data sources
+- **[PR Review](PR_REVIEW.md)** - Advisory review workflow and provider setup
+- **[DSH Setup](DSH.md)** - Run this repo under DSH
+- **[Archive: Claude Code](archive/claude-code/README.md)** - Retired Claude Code setup and notes
 
 Much of the day-to-day workflow (running the app, testing, releasing, worktrees, OpenAIP,
-sandbox setup) lives in `.claude/skills/` rather than here.
+sandbox setup) lives in `.agents/skills/` rather than here. DSH loads these skills. See
+[DSH Setup](DSH.md) for the skill layout, the artifact map, and the differences from the
+retired Claude Code setup.
 
 ## API Documentation
 

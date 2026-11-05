@@ -1,4 +1,4 @@
-# CLAUDE.md
+# The Paragliding App — agent rules
 
 ## ⚡ Critical Rules (Read First)
 
@@ -31,9 +31,6 @@ environment export and the generic analyze/test discipline are in the global
 **`flutter-dev`** skill; how to decide whether a result actually proves anything is
 **`verification`**. Do not duplicate any of them here.
 
-- `flutter analyze` after complex, multi-file changes.
-- `flutter test` (plain - no concurrency flag needed locally). CI still uses
-  `--concurrency=1`.
 - `kill "$(cat dev_data/flutter.pid)"` to stop a running app.
 
 ## 🤖 Agent environment facts (read before running anything)
@@ -43,9 +40,9 @@ WU PWS session - three failed app starts and one wrong-directory analyze run;
 2026-09-12, wireless-adb session - the two `adb`s and the missing sudo):
 
 1. **Read the relevant skill FIRST, before running its commands.**
-   Project skills reach the session catalog through the gitignored `.dsh/skills/` symlink
-   bridge (DSH does not scan `.claude/skills/` directly), so load them with the `skill`
-   tool - `read` by path only if the catalog is missing one. Non-negotiable triggers:
+   Project skills live in `.agents/skills/`, which DSH scans directly, so load them with
+   the `skill` tool - `read` by path only if the catalog is missing one. Non-negotiable
+   triggers:
    - about to run the app, reload, screenshot, drive the UI, or use adb
      → `run-app`
    - about to run `flutter test`, `flutter analyze`, or touch fixtures
@@ -81,9 +78,11 @@ WU PWS session - three failed app starts and one wrong-directory analyze run;
 | `lib/main.dart` | App entry point | Low |
 | `lib/services/database_service.dart` | Main database layer | High |
 | `lib/services/flight_track_loader.dart` | **Single source of truth** for flight data | High |
-| `lib/services/logging_service.dart` | Claude-optimized logging | High |
+| `lib/services/logging_service.dart` | Structured logging | High |
 | `lib/presentation/screens/flight_list_screen.dart` | Main flight list | High |
 | `lib/presentation/screens/flight_detail_screen.dart` | Flight details | Medium |
+
+Paths in this table and in Code Layout are relative to `the_paragliding_app/`.
 
 ## 📂 Code Layout
 
@@ -95,18 +94,14 @@ WU PWS session - three failed app starts and one wrong-directory analyze run;
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| `print()` used | Direct print call | Use `LoggingService.info()` instead |
-| Track data empty | Direct IGC parsing | Use `FlightTrackLoader.loadFlightTrack()` |
-| State not updating | Widget not rebuilding | Check `setState()` calls |
-| Database locked | Concurrent operations | Use `DatabaseService` methods |
 | Tests fail with `TimeoutException` | A test file opens a file-backed database, or does needless DB lifecycle churn | Keep the test DB in-memory; don't add per-test `recreateDatabase()` (see #280) |
 | Test reads its own fixture back empty | Fixture written to a fixed `/tmp` path | Use `TestHelpers.fixturePath('name.igc')` |
 | Test hits the network | Live-API test not tagged | Tag it `network`; it is skipped by default |
 | Hot reload fails | State corruption | Use `R` (hot restart) instead of `r` |
 | App won't start | Already running | `kill "$(cat dev_data/flutter.pid)"`, then start again |
 | Hot reload does nothing | App not actually running | `kill -0 "$(cat dev_data/flutter.pid)"` - no pid file means it exited |
-| `Gtk-WARNING cannot open display: :0` | Bash sandbox has no X11 display - the machine is not headless | Add `bin/dev_*.sh` to `sandbox.excludedCommands` (see the `sandbox-setup` skill) |
-| Build dies on `Read-only file system` in `/tmp` or `~/.local/share/kotlin` | Bash sandbox filesystem policy | Add the path to `sandbox.filesystem.allowWrite` (see the `sandbox-setup` skill) |
+| `Gtk-WARNING cannot open display: :0` | DSH hides the X11 socket - the machine is not headless | Use the Wayland socket (`sandbox-setup` skill), then escalate once |
+| Build dies on `Read-only file system` in `/tmp` or `~/.local/share/kotlin` | DSH sandbox filesystem policy | Use the `flutter-dev` writable-HOME export, then escalate once (see the `sandbox-setup` skill) |
 
 ## Project Overview
 
@@ -116,14 +111,13 @@ The Paragliding App is a free, Android-first, cross-platform application for log
 
 **Scale**: Simple app with <10 screens, <5000 flights, <100 sites, <10 wings
 
-**Documentation**: [Architecture](docs/TECHNICAL_DESIGN.md) | [Requirements](docs/FUNCTIONAL_SPECIFICATION.md)
+**Documentation**: [Index](docs/README.md) | [Architecture](docs/TECHNICAL_DESIGN.md) | [Requirements](docs/FUNCTIONAL_SPECIFICATION.md)
 
-## Claude Code Integration
+## DSH integration
 
-**Bash sandbox** (per-developer, not configured in this repo): if a sandboxed command
-fails looking like a headless machine, a dead network, or a read-only filesystem, it
-usually isn't - see the `sandbox-setup` skill for this project's `excludedCommands`,
-`filesystem.allowWrite`, and `network.strictAllowlist` requirements.
+**DSH** is the current harness. It reads `AGENTS.md` and the project skills. See
+[docs/DSH.md](docs/DSH.md) for skills, sandbox recovery, and CI. The retired Claude Code
+review workflow is in `docs/archive/claude-code/`.
 
 ### Logs
 
@@ -140,25 +134,23 @@ wrong conclusion drawn from it. **On a device the app usually keeps running afte
 detaches**, so the marker means the log stopped, not the app.
 
 For device logs (`bin/dev_logs.sh`, logcat ring-buffer tuning) see the `run-app` skill, and
-for analysing a log against the performance thresholds use the `flutter-log-analyzer` agent.
+for analysing a log against the performance thresholds load the `flutter-log-analyzer`
+skill.
 
 This marker is the local instance of the global **`verification`** rule: the presence of the
 marker is evidence, and a log that merely stops is not.
 
-**Agent definitions in `.claude/agents/` are not auto-loaded in DSH.** To use
-`flutter-log-analyzer`, read `.claude/agents/flutter-log-analyzer.md` and either follow it
-inline (fine for small logs) or pass its content to a subagent (better when the log is
-large and you don't want it eating this session's context). Skills are different: the
-`.dsh/skills/` bridge above puts `.claude/skills/*` in the catalog, so load those with the
-`skill` tool.
+**The `flutter-log-analyzer` skill contains its agent definition in `agent.md`.** Load the
+skill and follow it. Pass the agent file and the log path to a subagent when the log is
+large. Project skills live in `.agents/skills/`, so load them with the `skill` tool.
 
-### Claude-Specific Patterns
+### Logging patterns
 
 ```dart
-// File navigation format for Claude
+// File navigation format
 LoggingService.info('Error in flight loading'); // Outputs: at=flight_service.dart:142
 
-// Structured data for Claude analysis  
+// Structured data for analysis
 LoggingService.structured('PERFORMANCE', {
   'operation': 'database_query',
   'duration_ms': 245,
@@ -170,24 +162,24 @@ try {
   await operation();
 } catch (error, stackTrace) {
   LoggingService.error('Operation failed', error, stackTrace);
-  // Claude can parse the structured error output
+  // The structured error output is easy to parse.
 }
 ```
+
+Use `file_path:line_number` in logs. The values are clickable in the IDE.
 
 ## Development Principles
 
 ### Core Rules
 
-- **Keep it Simple**: Choose simple, proven solutions over complex architectures
-- **State Management**: Simple StatefulWidget with direct database access
-- **Database**: Simple management - <10 tables, largest <5000 rows
-- **Idiomatic**: Use idomatic language/tool-native approaches (Flutter, Cesium, JavaScript)
-- **WebView Constraints**: No ES6 modules, single JS context
-- **Error Recovery**: Add fallbacks for external services
+- **Keep it Simple**: Choose simple, proven solutions over complex architectures.
+- **Idiomatic**: Use idiomatic Flutter, Cesium, and JavaScript patterns.
+- **WebView Constraints**: No ES6 modules, single JS context.
+- **Error Recovery**: Add fallbacks for external services.
 
 ### Testing & Performance
 
-- Add Claude-readable logging for debugging and performance
+- Add structured logging for debugging and performance
 - Measure performance before optimizing; the thresholds live in the
   `flutter-log-analyzer` agent
 
@@ -200,7 +192,7 @@ Riverpod. Follow the surrounding code for shape; the reusable widgets are in
 `lib/presentation/widgets/common/` (`AppStatCard`, `AppExpansionCard`, `AppEmptyState`,
 `AppErrorState`, `AppLoadingSkeleton`) — use them rather than raw `Card`/`ExpansionTile`.
 
-### Log Format (Claude-optimized)
+### Log format
 
 ```
 [I][+1.2s] App startup completed | at=splash_screen.dart:32
@@ -252,24 +244,24 @@ One rule worth keeping inline because it costs real debugging time otherwise:
 **airspace polygons are a keyless bulk per-country download; the API key is for the map
 tile layer only.** When airspace breaks, check the bucket, not the key.
 
-## 🚀 Development Workflow (Claude-Optimized)
+## 🚀 Development workflow
 
 ### Worktrees
 
 **See the `git-worktree` global skill** for the portable mechanics (create from
 `origin/main`, bootstrap, merge, `-D` cleanup, proving a merge landed) and the **`worktree`
 project skill** for this repo's `bin/setup_worktree.sh`, the gitignored-file traps and the
-shared-checkout guards. Do not duplicate either here.
+DSH shared-checkout rule. Do not duplicate either here.
 
 Worktrees live in `.claude/worktrees/` (gitignored), branched from `origin/main`.
 
+Under DSH, nothing blocks a background job or subagent from moving HEAD in the shared
+checkout. Run ref-moving git commands in a worktree.
+
 ### Standard Development Process
 
-1. **Start**: `bin/dev_run.sh --background` (add `-d "<device>"` for a phone)
-2. **Code**: Follow existing patterns, use `LoggingService` for debugging
-3. **Test**: `bin/dev_reload.sh` for hot reload
-4. **Debug**: `tail -n 50 dev_data/flutter.log` + screenshots
-5. **Quality**: `flutter analyze` before committing
+Follow the `run-app` loop: start, code, hot reload, read the log, then run
+`flutter analyze`.
 
 ### Releasing
 
@@ -280,23 +272,11 @@ of truth for the sequence, and defers to `GOOGLE_PLAY_DEPLOYMENT.md` for the ref
 commands are in **`gh-pr`**, and whether a result proves anything is **`verification`**. Do
 not duplicate any of them here.
 
-### Common Task Patterns
+### Common task patterns
 
-| Task | Commands | Notes |
-|------|----------|-------|
-| Fix hot reload issues | `kill "$(cat dev_data/flutter.pid)"` → start again | No pid file means it already exited |
-| Debug UI (desktop) | `bin/dev_screenshot.sh` → Read the PNG; `bin/dev_input.sh` to tap/scroll | Both go via the VM service, not the compositor - no screenshot or input tool works under Crostini |
-| Debug UI (Android) | `adb exec-out screencap -p > dev_data/screenshot.png` → analyze | Unlock the phone first |
-| Performance check | `grep "\[P\]" dev_data/flutter.log` | Performance logs |
-| Schema change | Bump `databaseVersion`, add an `_onUpgrade` branch, test the upgrade path | Real migration - see docs/DATABASE.md. Never "clear data": the app is published |
-
-### File Navigation for Claude
-
-Use format `file_path:line_number` in logs:
-
-- `flight_service.dart:142` - Easy navigation
-- `database_service.dart:67` - Clickable in IDE
-- `logging_service.dart:28` - Jump to source
+The `run-app` skill owns hot reload, screenshots, input, and device logs. The
+`flutter-log-analyzer` skill owns log performance checks. See
+[docs/DATABASE.md](docs/DATABASE.md) for a schema change.
 
 ### Naming & UI conventions
 

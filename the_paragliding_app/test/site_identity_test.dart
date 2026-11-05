@@ -12,7 +12,7 @@ import 'package:the_paragliding_app/data/models/paragliding_site.dart';
 ///
 /// Deliberately touches no database: these are pure model tests, and a
 /// file-level database setUp would re-seed 249 country codes per test for
-/// nothing (see CLAUDE.md on issue #280).
+/// nothing (see AGENTS.md on issue #280).
 void main() {
   ParaglidingSite siteAt({
     int? id,
