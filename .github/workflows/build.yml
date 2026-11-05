@@ -356,13 +356,13 @@ jobs:
           echo "OK: AAB and APK are both signed with the upload key, neither contains .env"
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: app-release-apk
           path: the_paragliding_app/build/app/outputs/flutter-apk/app-release.apk
 
       - name: Upload App Bundle artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: app-release-bundle
           path: the_paragliding_app/build/app/outputs/bundle/release/app-release.aab
