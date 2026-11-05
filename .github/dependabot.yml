@@ -6,9 +6,19 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: "pub"
     directory: "/the_paragliding_app"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      pub-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"

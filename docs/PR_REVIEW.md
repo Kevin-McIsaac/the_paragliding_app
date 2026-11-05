@@ -45,6 +45,7 @@ It does not run on every push. To re-run after a change, remove the `ai-review` 
 and add it again.
 
 Draft PRs and fork PRs are skipped. A fork PR has no access to repository secrets.
+Dependabot PRs are skipped. They cannot read the review secret.
 
 ## What it does
 
