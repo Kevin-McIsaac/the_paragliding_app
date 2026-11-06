@@ -46,7 +46,7 @@ dependencies:
   geobase: ^1.1.0  # Modern GeoJSON parsing and geospatial data handling for airspace data
   latlong2: ^0.9.1            # Coordinate handling for flutter_map
   file_picker: ^13.3.2      # IGC file import - federated rewrite
-  receive_sharing_intent: 1.8.1  # Pinned: 1.9.0 needs AGP 9 and compileSdk 37
+  receive_sharing_intent: 1.9.0  # Pinned: 1.9.0 needs AGP 9 and compileSdk 37
   fl_chart: ^1.0.0         # Charts for altitude/climb rate
   intl: ^0.20.2             # Date/time formatting
   multi_dropdown: ^3.0.1    # Multi-select dropdown with search and chips
