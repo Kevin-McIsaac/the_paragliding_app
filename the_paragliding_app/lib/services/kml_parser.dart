@@ -113,7 +113,7 @@ class KmlParser {
       return {
         'lat': lat,
         'lon': lon,
-        if (alt != null) 'alt': alt,
+        'alt': ?alt,
       };
     } catch (e) {
       return null;

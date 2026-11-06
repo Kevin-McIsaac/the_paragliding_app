@@ -774,7 +774,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                   // moved to the AppBar - and the rose floating above the
                   // facts rather than belonging to them.
                   _buildRoseHeader(windDirections, [
-                    if (flyabilityLine != null) flyabilityLine,
+                    ?flyabilityLine,
                     ..._buildOverviewContent(
                         latitude,
                         longitude,

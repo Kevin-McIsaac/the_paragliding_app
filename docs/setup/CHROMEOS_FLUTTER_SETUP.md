@@ -47,7 +47,7 @@ export PATH="$HOME/flutter/bin:$PATH"
 flutter --version
 ```
 
-This machine is on **Flutter 3.41.6 stable** as of 2026-08-29; the guide previously
+This machine is on **Flutter 3.47.9 stable** as of 2026-11-06; the guide previously
 pinned 3.32.8 and told you to install to `~/development/flutter`, neither of which
 matches the real setup.
 
@@ -140,7 +140,7 @@ flutter doctor
 
 Expected result after setup:
 ```
-[✓] Flutter (Channel stable, 3.41.6)
+[✓] Flutter (Channel stable, 3.47.9)
 [✓] Android toolchain - develop for Android devices (Android SDK version 34.0.0)
 [✓] Linux toolchain - develop for Linux desktop
 ```

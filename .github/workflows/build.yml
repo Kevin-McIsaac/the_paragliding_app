@@ -31,7 +31,7 @@ permissions:
 
 env:
   # Must ship Dart >= 3.8.1 to satisfy the pubspec SDK constraint
-  FLUTTER_VERSION: "3.41.6"
+  FLUTTER_VERSION: "3.47.9"
 
 jobs:
   # Everything that can be decided in seconds, before a ~15 minute build.
@@ -483,7 +483,7 @@ jobs:
       # the worse summary of the two. generate_release_notes still appends the
       # generated changelog underneath, so nothing is lost.
       - name: Create Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@28ab305d0ffa26d60ec4bd614126329e26c7a0ec # v3.0.4
         with:
           files: app-release.apk
           body_path: distribution/whatsnew/whatsnew-en-GB

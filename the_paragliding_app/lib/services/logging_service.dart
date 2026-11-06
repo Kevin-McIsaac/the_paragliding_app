@@ -168,8 +168,8 @@ class LoggingService {
       structured('CACHE_OPERATION', {
         'cache': cacheName,
         'hit': hit,
-        if (key != null) 'key': key,
-        if (sizeBytes != null) 'size_bytes': sizeBytes,
+        'key': ?key,
+        'size_bytes': ?sizeBytes,
         if (lookupTime != null) 'lookup_ms': lookupTime.inMilliseconds,
       });
     }

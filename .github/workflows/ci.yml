@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 env:
-  FLUTTER_VERSION: "3.41.6"
+  FLUTTER_VERSION: "3.47.9"
 
 jobs:
   # build.yml carries a near-copy of this job, because the release path must not

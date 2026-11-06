@@ -1,5 +1,8 @@
 import 'package:timezone/timezone.dart' as tz;
-import 'package:timezone/data/latest.dart' as tz;
+// The full IANA database. timezone 0.11 made latest.dart a "common locations"
+// subset, which dropped UTC, Europe/Stockholm, Europe/Oslo and
+// America/Buenos_Aires - all of which the longitude fallback below returns.
+import 'package:timezone/data/latest_all.dart' as tz;
 import 'dart:math';
 import '../services/logging_service.dart';
 

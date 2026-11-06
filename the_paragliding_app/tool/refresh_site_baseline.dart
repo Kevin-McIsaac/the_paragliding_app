@@ -73,7 +73,7 @@ Future<String> _load(List<String> args) async {
     if (response.statusCode != 200) {
       throw StateError('catalogue fetch failed: HTTP ${response.statusCode}');
     }
-    return response.transform(utf8.decoder).join();
+    return await response.transform(utf8.decoder).join();
   } finally {
     client.close();
   }

@@ -102,17 +102,13 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
     
     try {
       // For Android 14+ (API 34+), use a more compatible approach
-      FilePickerResult? result;
+      List<PlatformFile> files;
       
       try {
-        // For Android, use withData to ensure file content is accessible
         // Add timeout to prevent permanent UI lock
-        result = await FilePicker.platform.pickFiles(
+        files = await FilePicker.pickFiles(
           type: FileType.custom,
           allowedExtensions: ['igc', 'IGC'],
-          allowMultiple: true,
-          withData: false,
-          withReadStream: false,
           initialDirectory: _lastFolder,
         ).timeout(
           const Duration(minutes: 10),
@@ -120,16 +116,13 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
             setState(() {
               _errorMessage = 'File selection timed out after 10 minutes. This can happen with very large cloud folders. Try selecting fewer files or copying them to local storage first.';
             });
-            return null;
+            return <PlatformFile>[];
           },
         );
       } catch (e) {
         // Fallback: try with any file type and filter manually
-        result = await FilePicker.platform.pickFiles(
+        final picked = await FilePicker.pickFiles(
           type: FileType.any,
-          allowMultiple: true,
-          withData: false,
-          withReadStream: false,
           initialDirectory: _lastFolder,
         ).timeout(
           const Duration(minutes: 10),
@@ -137,36 +130,33 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
             setState(() {
               _errorMessage = 'File selection timed out after 10 minutes. This can happen with very large cloud folders. Try selecting fewer files or copying them to local storage first.';
             });
-            return null;
+            return <PlatformFile>[];
           },
         );
         
         // Filter for .igc files manually
-        if (result != null) {
-          final igcFiles = result.files.where((file) => 
-            file.name.toLowerCase().endsWith('.igc') && file.path != null
-          ).toList();
-          
-          if (igcFiles.isEmpty) {
-            setState(() {
-              _errorMessage = 'No IGC files selected. Please select files with .igc extension.';
-            });
-            return;
-          }
-          
-          // Create a new result with only IGC files
-          result = FilePickerResult(igcFiles);
+        final igcFiles = picked.where((file) =>
+          file.name.toLowerCase().endsWith('.igc') && file.path != null
+        ).toList();
+
+        if (igcFiles.isEmpty && picked.isNotEmpty) {
+          setState(() {
+            _errorMessage = 'No IGC files selected. Please select files with .igc extension.';
+          });
+          return;
         }
+
+        files = igcFiles;
       }
 
       // Update status when picker returns
-      if (result != null && result.files.isNotEmpty) {
-        final fileCount = result.files.length;
+      if (files.isNotEmpty) {
+        final fileCount = files.length;
         setState(() {
           _selectionStatus = "Processing $fileCount files... Please wait.";
         });
         
-        final validPaths = result.files
+        final validPaths = files
             .where((file) => file.path != null)
             .map((file) => file.path!)
             .toList();

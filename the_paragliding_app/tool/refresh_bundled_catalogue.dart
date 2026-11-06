@@ -54,7 +54,7 @@ Future<String> _fetch(String url) async {
     if (response.statusCode != 200) {
       throw StateError('fetch failed: HTTP ${response.statusCode} for $url');
     }
-    return response.transform(utf8.decoder).join();
+    return await response.transform(utf8.decoder).join();
   } finally {
     client.close();
   }

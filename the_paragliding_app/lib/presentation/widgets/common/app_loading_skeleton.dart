@@ -286,7 +286,7 @@ class AppPageLoadingSkeleton extends StatelessWidget {
           ),
         
         // Custom header if provided
-        if (customHeader != null) customHeader!,
+        ?customHeader,
         
         // List skeleton
         Expanded(
