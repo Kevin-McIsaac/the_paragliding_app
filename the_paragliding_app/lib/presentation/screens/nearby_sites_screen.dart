@@ -127,6 +127,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   // Consolidated loading state
   final Set<LoadingOperation> _activeLoadingOperations = {};
   String? _errorMessage;
+  // One weather-provider notice per failure episode, not one per map pan.
+  String? _lastProviderNotice;
+  DateTime? _lastProviderNoticeAt;
   LatLng? _mapCenterPosition;
   bool _mapReady = false; // Track if map is initialized
   double _currentZoom = 10.0; // Current zoom level (updated reactively)
@@ -684,6 +687,31 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     return nearest;
   }
 
+  static const Duration _providerNoticeRepeatWindow = Duration(minutes: 15);
+
+  /// Surface a provider failure the user can act on. A throttled shared key is
+  /// an account-level state, not a transient network blip, so one notice is
+  /// enough - the provider itself stops calling for its cooldown.
+  void _showWeatherProviderNotice(
+      WeatherStationSource source, String message) {
+    final now = DateTime.now();
+    final recent = _lastProviderNoticeAt != null &&
+        now.difference(_lastProviderNoticeAt!) < _providerNoticeRepeatWindow;
+    if (_lastProviderNotice == message && recent) return;
+    _lastProviderNotice = message;
+    _lastProviderNoticeAt = now;
+    LoggingService.structured('PROVIDER_API_ERROR', {
+      'source': source.name,
+      'message': message,
+    });
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 6),
+      ));
+  }
+
   Future<void> _fetchWeatherStations() async {
     // Skip fetching if weather stations are disabled
     if (!_weatherStationsEnabled) {
@@ -742,6 +770,10 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         final stations = await _weatherStationService.getStationsInBounds(
           _currentBounds!,
           focusPoint: focusPoint,
+          onProviderError: (source, message) {
+            if (!mounted) return;
+            _showWeatherProviderNotice(source, message);
+          },
           onProgress: ({
             required source,
             required displayName,

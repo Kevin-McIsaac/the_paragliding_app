@@ -62,6 +62,7 @@ class AviationWeatherCenterProvider implements WeatherStationProvider {
     Function()? onApiCallStart,
     void Function(List<WeatherStation>)? onStationsUpdated,
     LatLng? focusPoint,
+    void Function(String message)? onError,
   }) async {
     // Generate cache key from bounds
     final cacheKey = _getBoundsCacheKey(bounds);

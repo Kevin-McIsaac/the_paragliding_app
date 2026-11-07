@@ -71,6 +71,7 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
     Function()? onApiCallStart,
     void Function(List<WeatherStation>)? onStationsUpdated,
     LatLng? focusPoint,
+    void Function(String message)? onError,
   }) async {
     try {
       // Early exit: Check if cached bbox overlaps with requested bounds

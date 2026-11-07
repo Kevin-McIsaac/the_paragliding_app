@@ -56,12 +56,17 @@ abstract class WeatherStationProvider {
   /// has one (the Nearby Sites screen passes the site nearest the map centre).
   /// A provider whose discovery is point-based should prefer it over the
   /// viewport centre; providers that answer for the whole bbox ignore it.
+  ///
+  /// [onError] - Optional callback for a failure the user should see, such as
+  /// an API key that is throttled. Providers call it at most once per failure
+  /// episode; providers without such a failure mode ignore it.
   Future<List<WeatherStation>> fetchStations(
     LatLngBounds bounds, {
     Function()? onApiCallStart,
     void Function(List<WeatherStation> stations, {bool passComplete})?
         onStationsUpdated,
     LatLng? focusPoint,
+    void Function(String message)? onError,
   });
 
   /// Fetch current weather data for a list of stations

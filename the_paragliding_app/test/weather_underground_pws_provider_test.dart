@@ -38,6 +38,55 @@ void main() {
     };
   }
 
+  group('a throttled key cools down instead of re-probing', () {
+    late WeatherUndergroundPwsProvider provider;
+    late int requests;
+    late List<String> notices;
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      provider = WeatherUndergroundPwsProvider.instance;
+      provider.apiKeyForTest = 'test-key';
+      provider.clearCacheForTest();
+      await Future<void>.delayed(Duration.zero);
+      provider.resetInMemoryCacheForTest();
+      provider.resetAuthThrottleForTest();
+      requests = 0;
+      notices = [];
+      provider.httpClientForTest = MockClient((request) async {
+        requests++;
+        return http.Response('API key is throttled', 401);
+      });
+    });
+
+    tearDown(() {
+      provider.apiKeyForTest = null;
+      provider.resetAuthThrottleForTest();
+    });
+
+    test('one 401 stops the probes and reports once', () async {
+      final bounds =
+          LatLngBounds(LatLng(-31.75, 115.65), LatLng(-31.60, 115.80));
+      await provider.fetchStations(bounds, onError: notices.add);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(requests, 1, reason: 'the first pass probes once');
+      expect(provider.authThrottledUntilForTest, isNotNull);
+      expect(notices, [WeatherUndergroundPwsProvider.authThrottledMessage]);
+
+      // A different viewport would normally probe again. While the cooldown
+      // holds it must not touch the API - retrying cannot fix a throttled key,
+      // and the retries are what exhausts it further.
+      final elsewhere =
+          LatLngBounds(LatLng(-32.10, 116.20), LatLng(-31.90, 116.40));
+      await provider.fetchStations(elsewhere, onError: notices.add);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(requests, 1, reason: 'no request during the cooldown');
+      expect(notices, hasLength(1), reason: 'one notice per failure episode');
+    });
+  });
+
   group('registry wiring', () {
     test('PWS source is registered', () {
       final provider = WeatherStationProviderRegistry.getProvider(

@@ -43,12 +43,17 @@ class WeatherStationService {
   /// one. It is forwarded untouched; only a point-based discovery provider
   /// (WU PWS) uses it, and it prefers it over the viewport centre.
   ///
+  /// [onProviderError] reports a failure the user should see (for example a
+  /// throttled API key), with the provider it came from. Providers call it at
+  /// most once per failure episode.
+  ///
   /// [providersForTest] bypasses the enabled-provider lookup so a test can
   /// drive this method with fake providers instead of the live registry.
   Future<List<WeatherStation>> getStationsInBounds(
     LatLngBounds bounds, {
     ProviderProgressCallback? onProgress,
     LatLng? focusPoint,
+    void Function(WeatherStationSource source, String message)? onProviderError,
     @visibleForTesting List<WeatherStationProvider>? providersForTest,
   }) async {
     try {
@@ -97,6 +102,9 @@ class WeatherStationService {
           final stations = await provider.fetchStations(
             bounds,
             focusPoint: focusPoint,
+            onError: onProviderError == null
+                ? null
+                : (message) => onProviderError(provider.source, message),
             onApiCallStart: onProgress != null
                 ? () {
                     // Provider is notifying that it's making an API call

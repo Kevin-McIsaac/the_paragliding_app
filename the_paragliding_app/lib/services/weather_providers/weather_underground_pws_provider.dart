@@ -80,6 +80,45 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
   DateTime? _measurementsTimestamp;
   DateTime _lastRequestAt = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// A 401/403 is an account-level problem - the shared key is throttled or
+  /// revoked - so probing again on every pan cannot fix it and only adds load
+  /// to an already-limited key. Stop calling until the cooldown expires.
+  DateTime? _authThrottledUntil;
+  static const Duration authThrottleCooldown = Duration(minutes: 15);
+  static const String authThrottledMessage =
+      'Weather Underground is unavailable. The shared API key is throttled. '
+      'Other weather sources still work.';
+
+  bool get _isAuthThrottled =>
+      _authThrottledUntil != null &&
+      DateTime.now().isBefore(_authThrottledUntil!);
+
+  @visibleForTesting
+  DateTime? get authThrottledUntilForTest => _authThrottledUntil;
+
+  @visibleForTesting
+  void resetAuthThrottleForTest() => _authThrottledUntil = null;
+
+  /// Remember an auth failure and tell the UI once, not once per pass.
+  void _markAuthThrottled(
+      int statusCode, void Function(String message)? onError) {
+    final wasThrottled = _isAuthThrottled;
+    _authThrottledUntil = DateTime.now().add(authThrottleCooldown);
+    LoggingService.structured('WU_PWS_AUTH_THROTTLED', {
+      'status_code': statusCode,
+      'cooldown_minutes': authThrottleCooldown.inMinutes,
+      'retry_after': _authThrottledUntil!.toIso8601String(),
+    });
+    if (!wasThrottled) onError?.call(authThrottledMessage);
+  }
+
+  void _clearAuthThrottle() {
+    if (_authThrottledUntil == null) return;
+    _authThrottledUntil = null;
+    LoggingService.structured(
+        'WU_PWS_AUTH_RECOVERED', const <String, dynamic>{});
+  }
+
   /// One client for every request, so the connection is reused. A fresh
   /// `http.get` builds a new client per call and pays TLS setup each time:
   /// measured 525ms cold against the live API where a warm connection answers
@@ -178,6 +217,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     void Function(List<WeatherStation> stations, {bool passComplete})?
         onStationsUpdated,
     LatLng? focusPoint,
+    void Function(String message)? onError,
   }) async {
     await _loadPersistedCache();
     final generation = ++_generation;
@@ -200,7 +240,8 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
         apiKey: apiKeyForTest ?? ApiKeys.wundergroundApiKey,
         onApiCallStart: onApiCallStart, onStationsUpdated: onStationsUpdated,
         focusPoint: focusPoint,
-        generation: generation);
+        generation: generation,
+        onError: onError);
 
     return cached;
   }
@@ -215,6 +256,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
         onStationsUpdated,
     LatLng? focusPoint,
     required int generation,
+    void Function(String message)? onError,
   }) {
     final previous = _fetchQueue ?? Future.value();
     _pendingPasses++;
@@ -227,6 +269,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
               onStationsUpdated: onStationsUpdated,
               focusPoint: focusPoint,
               generation: generation,
+              onError: onError,
             ))
         .whenComplete(() => _pendingPasses--);
     _fetchQueue = task;
@@ -242,6 +285,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
         onStationsUpdated,
     LatLng? focusPoint,
     required int generation,
+    void Function(String message)? onError,
   }) async {
     try {
       if (apiKey.isEmpty) return;
@@ -273,6 +317,16 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
         onStationsUpdated?.call(delta);
       }
 
+      if (_isAuthThrottled) {
+        LoggingService.structured('WU_PWS_AUTH_COOLDOWN', {
+          'retry_after': _authThrottledUntil!.toIso8601String(),
+        });
+        // Terminal push, so the screen's provider overlay closes instead of
+        // waiting for a probe that will not happen.
+        push(passComplete: true);
+        return;
+      }
+
       // Probe when the area around `target` is unknown to the cache. The 10
       // nearest stations to that point are what the pilot is looking at;
       // country-wide density is not worth a grid of probes at 2s each.
@@ -284,7 +338,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
       } else {
         if (superseded()) return;
         onApiCallStart?.call();
-        await _probePoint(target, apiKey);
+        await _probePoint(target, apiKey, onError: onError);
         // Persist before the supersession check. The discovered set is not
         // viewport-dependent: a pass that has been superseded still found these
         // stations, and the write is what carries them past a restart. Only the
@@ -319,7 +373,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
         onApiCallStart?.call();
       }
       await _refreshReadings(apiKey, bounds, superseded,
-          onBatch: push, pushBatches: !wasSuperseded);
+          onBatch: push, pushBatches: !wasSuperseded, onError: onError);
       // passComplete only matters for the screen's overlay lifecycle: a
       // superseded pass's overlay was already cleared by the newer fetch,
       // so skip the terminal push for it (and never push stale bounds).
@@ -621,7 +675,8 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
   int pruneDiscoveredForTest() => _pruneDiscovered();
 
   /// Probe one point via v3/location/near, merging results into the cache.
-  Future<void> _probePoint(LatLng point, String apiKey) async {
+  Future<void> _probePoint(LatLng point, String apiKey,
+      {void Function(String message)? onError}) async {
     await _throttle();
 
     final stopwatch = Stopwatch()..start();
@@ -656,8 +711,12 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
         'endpoint': 'location_near',
         'status_code': response.statusCode,
       });
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        _markAuthThrottled(response.statusCode, onError);
+      }
       return;
     }
+    _clearAuthThrottle();
 
     final Map<String, dynamic>? decoded = _tryDecode(response.body);
     if (decoded == null) return;
@@ -737,6 +796,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
     bool Function() superseded, {
     void Function()? onBatch,
     bool pushBatches = true,
+    void Function(String message)? onError,
   }) async {
     final inBounds = discovered.values
         .where((s) =>
@@ -778,9 +838,18 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
       // inside what the endpoint serves (ten concurrent measured clean).
       await _throttle();
       await Future.wait([
-        for (final station in batch) _readStation(station, apiKey),
+        for (final station in batch)
+          _readStation(station, apiKey, onError: onError),
       ]);
       done += batch.length;
+
+      if (_isAuthThrottled) {
+        LoggingService.structured('WU_PWS_READINGS_ABORTED', {
+          'reason': 'auth_throttled',
+          'readings_done': done,
+        });
+        return;
+      }
 
       // Push the refined view after each batch, so wind trails the markers by
       // seconds rather than by the whole pass. A superseded pass must not push:
@@ -792,7 +861,8 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
 
   /// One `observations/current` call, with its own error handling so one
   /// station's failure cannot take the rest of its batch down.
-  Future<void> _readStation(DiscoveredPwsStation station, String apiKey) async {
+  Future<void> _readStation(DiscoveredPwsStation station, String apiKey,
+      {void Function(String message)? onError}) async {
     final stopwatch = Stopwatch()..start();
     try {
       final uri = Uri.parse(
@@ -810,6 +880,9 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
           'station_id': station.id,
           'status_code': response.statusCode,
         });
+        if (response.statusCode == 401 || response.statusCode == 403) {
+          _markAuthThrottled(response.statusCode, onError);
+        }
         // 204 (and 404) mean the station itself is silent/absent - remember
         // that so the marker shows "no data" instead of pending forever.
         // Any OTHER status (401 bad key, 429 rate limit, 5xx outage) is a
@@ -821,6 +894,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
         }
         return;
       }
+      _clearAuthThrottle();
 
       final decoded = _tryDecode(response.body);
       if (decoded == null) return;

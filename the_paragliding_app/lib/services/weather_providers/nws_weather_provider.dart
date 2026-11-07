@@ -105,6 +105,7 @@ class NwsWeatherProvider implements WeatherStationProvider {
     Function()? onApiCallStart,
     void Function(List<WeatherStation>)? onStationsUpdated,
     LatLng? focusPoint,
+    void Function(String message)? onError,
   }) async {
     // Early return if outside NWS coverage area
     if (!_isBoundsInCoverageArea(bounds)) {

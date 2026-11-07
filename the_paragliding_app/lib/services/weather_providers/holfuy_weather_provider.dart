@@ -110,6 +110,7 @@ class HolfuyWeatherProvider implements WeatherStationProvider {
     void Function(List<WeatherStation> stations, {bool passComplete})?
         onStationsUpdated,
     LatLng? focusPoint,
+    void Function(String message)? onError,
   }) async {
     try {
       final catalogue =

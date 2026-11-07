@@ -274,6 +274,7 @@ class _PushProvider implements WeatherStationProvider {
     void Function(List<WeatherStation> stations, {bool passComplete})?
         onStationsUpdated,
     LatLng? focusPoint,
+    void Function(String message)? onError,
   }) async {
     lastFocusPoint = focusPoint;
     onApiCallStart?.call();
@@ -342,6 +343,7 @@ class _BlockingProvider implements WeatherStationProvider {
     void Function(List<WeatherStation> stations, {bool passComplete})?
         onStationsUpdated,
     LatLng? focusPoint,
+    void Function(String message)? onError,
   }) async =>
       result;
 
