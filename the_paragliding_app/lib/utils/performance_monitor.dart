@@ -29,6 +29,15 @@ class PerformanceMonitor {
   // Operation tracking
   static final Map<String, DateTime> _operationStartTimes = {};
 
+  /// Ends with no matching start. Overlapping operations with the same name -
+  /// two site searches in flight at once - share one start slot, so the second
+  /// end finds nothing. That is expected, not a fault: count it and keep it out
+  /// of the duration metrics instead of warning on every keystroke.
+  static int _unmatchedEnds = 0;
+
+  @visibleForTesting
+  static int get unmatchedEndsForTest => _unmatchedEnds;
+
   /// Start tracking a named operation
   static void startOperation(String name) {
     if (!kDebugMode) return;
@@ -41,7 +50,9 @@ class PerformanceMonitor {
 
     final startTime = _operationStartTimes.remove(name);
     if (startTime == null) {
-      LoggingService.warning('PerformanceMonitor: endOperation called without startOperation for: $name');
+      _unmatchedEnds++;
+      LoggingService.debug(
+          'PerformanceMonitor: ignored end without start for $name');
       return;
     }
 
@@ -259,6 +270,8 @@ class PerformanceMonitor {
   static void reset() {
     _widgetRebuildCounts.clear();
     _lastRebuildTime.clear();
+    _operationStartTimes.clear();
+    _unmatchedEnds = 0;
     _lastCleanup = DateTime.now();
   }
 }

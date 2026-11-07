@@ -2244,18 +2244,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
               child: Material(
                 elevation: 8,
                 color: Theme.of(context).colorScheme.surface,
-                child: Container(
+                child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 300),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
                   child: _isSearching
                     ? Padding(
                         padding: const EdgeInsets.all(16),
