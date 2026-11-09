@@ -57,13 +57,16 @@ would call the proxy, and only the proxy would hold the key.
 - **Purpose**: 3D map visualization
 - **Get it from**: <https://ion.cesium.com/tokens>
 
-### 4. Wunderground PWS Key (Optional, TEMPORARY shared key)
+### 4. Wunderground PWS Key (Optional, PAUSED)
 
+- **Status**: Unused until a valid key returns. The shared key was rejected with HTTP 401 on
+  2026-11-09, so it is removed from `env.json` and CI. The source stays in the code, but
+  `WeatherUndergroundPwsProvider.awaitingValidKey` keeps it out of every fetch and the map
+  filter disables its checkbox.
 - **Purpose**: Weather Underground personal weather stations (api.weather.com PWS APIs)
-- **Note**: Temporary. The target state (see `docs/PWS_STATION_DISCOVERY.md`) is that each
-  user pastes their own free key from <https://www.wunderground.com/member/api-keys>. Until
-  that in-app flow exists, a shared key is injected via `WUNDERGROUND_API_KEY` like the
-  others. It is still recoverable from a shipped binary — treat it as public.
+- **Note**: The target state (see `docs/PWS_STATION_DISCOVERY.md`) is that each user pastes
+  their own free key from <https://www.wunderground.com/member/api-keys>. Do not commit a
+  shared key or pass one in CI again.
 
 ### Not Google Maps
 
@@ -95,7 +98,10 @@ flutter build appbundle --release --dart-define-from-file=env.json
 CI (`.github/workflows/build.yml`) injects each key from repository secrets. Add them under
 **Settings → Secrets and variables → Actions**:
 
-`FFVL_API_KEY`, `OPENAIP_API_KEY`, `CESIUM_ION_TOKEN`, `WUNDERGROUND_API_KEY`
+`FFVL_API_KEY`, `OPENAIP_API_KEY`, `CESIUM_ION_TOKEN`
+
+`WUNDERGROUND_API_KEY` is deliberately absent while the WU PWS source is paused. Do not add
+it back until a valid key exists.
 
 For a local release build, pass `--dart-define-from-file=env.json` explicitly. A release built
 without it will start and run, but FFVL weather, OpenAIP overlays and Cesium 3D will all be
@@ -107,8 +113,10 @@ The app logs key status at startup:
 
 ```
 [API_KEYS_STATUS] {ffvl_configured: true, openaip_configured: true,
-                   cesium_configured: true, wunderground_configured: true, source: dart-define}
+                   cesium_configured: true, wunderground_configured: false, source: dart-define}
 ```
+
+`wunderground_configured: false` is expected: the WU PWS source is paused.
 
 `source: none` means no keys were injected.
 
@@ -128,7 +136,7 @@ re-requesting, and search Gmail for the confirmation message first (cheapest rec
 | `FFVL_API_KEY` | <https://data.ffvl.fr/> | Email FFVL data administration. They reply with "voici votre clé API FFVL : ..." | 32-char lowercase hex |
 | `OPENAIP_API_KEY` | <https://www.openaip.net/> | Log in → user profile → API keys → regenerate or copy existing | 32-char lowercase hex |
 | `CESIUM_ION_TOKEN` | <https://ion.cesium.com/tokens> | Log in → Access Tokens → create a new token or copy the default | JWT, starts with `eyJ...` |
-| `WUNDERGROUND_API_KEY` | <https://www.wunderground.com/member/api-keys> | Log in → member profile → API keys (requires an active PWS device entry) | 32-char alphanumeric |
+| `WUNDERGROUND_API_KEY` | <https://www.wunderground.com/member/api-keys> | Paused: no key in env.json or CI. Log in → member profile → API keys (requires an active PWS device entry) when a replacement is needed | 32-char alphanumeric |
 
 For Cesium, log in with the GitHub account and use the **"The Paragliding App Default"**
 token — not the account's original default token, which has been rotated.

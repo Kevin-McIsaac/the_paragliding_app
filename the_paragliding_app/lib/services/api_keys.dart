@@ -30,12 +30,13 @@ class ApiKeys {
   /// Cesium Ion Access Token (optional, for 3D map visualization)
   static const String cesiumIonToken = String.fromEnvironment('CESIUM_ION_TOKEN');
 
-  /// Weather Underground PWS key (api.weather.com) - TEMPORARY shared key.
+  /// Weather Underground PWS key (api.weather.com).
   ///
-  /// The PWS_STATION_DISCOVERY.md policy is that each user supplies their own
-  /// free key (wunderground.com/member/api-keys). Until that in-app flow
-  /// exists, a key is passed via dart-define like the others. It is still
-  /// recoverable from a shipped binary - treat it as public.
+  /// UNUSED UNTIL A VALID KEY RETURNS. The shared key was rejected with HTTP
+  /// 401 on 2026-11-09, so it is removed from env.json and CI, and
+  /// `WeatherUndergroundPwsProvider.awaitingValidKey` keeps the source out of
+  /// every fetch. The policy target is still a user-supplied key
+  /// (wunderground.com/member/api-keys), never a key embedded in the binary.
   static const String wundergroundApiKey = String.fromEnvironment('WUNDERGROUND_API_KEY');
 
   static bool get _anyKeyConfigured =>

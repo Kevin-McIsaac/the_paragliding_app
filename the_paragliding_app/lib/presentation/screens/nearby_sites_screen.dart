@@ -16,6 +16,7 @@ import '../../services/map_bounds_manager.dart';
 import '../../services/weather_service.dart';
 import '../../services/weather_station_service.dart';
 import '../../services/weather_providers/weather_station_provider_registry.dart';
+import '../../services/weather_providers/weather_underground_pws_provider.dart';
 import '../../utils/map_constants.dart';
 import '../../utils/site_utils.dart';
 import '../../utils/site_marker_utils.dart';
@@ -441,7 +442,12 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       final pioupiouEnabled = prefs.getBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled') ?? true;
       final ffvlEnabled = prefs.getBool('weather_provider_${WeatherStationSource.ffvl.name}_enabled') ?? true;
       final bomEnabled = prefs.getBool('weather_provider_${WeatherStationSource.bom.name}_enabled') ?? true;
-      final wundergroundPwsEnabled = prefs.getBool('weather_provider_${WeatherStationSource.weatherUndergroundPws.name}_enabled') ?? true;
+      // WU PWS is unused until a valid shared key returns (the old key was
+      // rejected with HTTP 401). Keep the saved preference untouched while it
+      // is unavailable, so the layer can come back with its old setting.
+      final wundergroundPwsEnabled =
+          !WeatherUndergroundPwsProvider.awaitingValidKey &&
+              (prefs.getBool('weather_provider_${WeatherStationSource.weatherUndergroundPws.name}_enabled') ?? true);
       final holfuyEnabled = prefs.getBool('weather_provider_${WeatherStationSource.holfuy.name}_enabled') ?? true;
 
       if (mounted) {
@@ -1799,7 +1805,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         _pioupiouEnabled = pioupiouEnabled;
         _ffvlEnabled = ffvlEnabled;
         _bomEnabled = bomEnabled;
-        _wundergroundPwsEnabled = wundergroundPwsEnabled;
+        _wundergroundPwsEnabled = wundergroundPwsEnabled &&
+            !WeatherUndergroundPwsProvider.awaitingValidKey;
         _holfuyEnabled = holfuyEnabled;
         _maxAltitudeFt = maxAltitudeFt;
       });
@@ -1817,7 +1824,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       await prefs.setBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled', pioupiouEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.ffvl.name}_enabled', ffvlEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.bom.name}_enabled', bomEnabled);
-      await prefs.setBool('weather_provider_${WeatherStationSource.weatherUndergroundPws.name}_enabled', wundergroundPwsEnabled);
+      if (!WeatherUndergroundPwsProvider.awaitingValidKey) {
+        await prefs.setBool('weather_provider_${WeatherStationSource.weatherUndergroundPws.name}_enabled', wundergroundPwsEnabled);
+      }
       await prefs.setBool('weather_provider_${WeatherStationSource.holfuy.name}_enabled', holfuyEnabled);
 
       // Handle sites visibility changes

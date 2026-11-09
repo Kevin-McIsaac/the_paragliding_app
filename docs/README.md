@@ -22,6 +22,7 @@ Welcome to The Paragliding App documentation. All documentation is organized in 
 - **[Timestamps](TIMESTAMPS.md)** - UTC/local timezone conversion handling
 - **[Database](DATABASE.md)** - Migrations, schema-change process, clearing dev data
 - **[Site Catalogue Requirements](SITE_CATALOGUE_REQUIREMENTS.md)** - Bundled site catalogue rules
+- **[Weather Station Sources](WEATHER_STATION_SOURCES.md)** - The seven station layers, their coverage, and their API keys
 - **[Adding Weather Providers](ADDING_WEATHER_PROVIDERS.md)** - Guide to integrating new weather data sources
 - **[PR Review](PR_REVIEW.md)** - Advisory review workflow and provider setup
 - **[DSH Setup](DSH.md)** - Run this repo under DSH
@@ -80,6 +81,7 @@ docs/
 ├── TIMESTAMPS.md
 ├── DATABASE.md
 ├── SITE_CATALOGUE_REQUIREMENTS.md
+├── WEATHER_STATION_SOURCES.md
 ├── ADDING_WEATHER_PROVIDERS.md
 │
 ├── user/                        # User-facing documentation
@@ -141,4 +143,4 @@ When adding or updating documentation:
 
 ---
 
-*Last Updated: 2026-08-29*
+*Last Updated: 2026-11-09*

@@ -74,13 +74,18 @@ program for **Personal Weather Station Contributors**:
 - Validate the key with one `pwsidentity` call at setup, then store it in app settings
   (never in source control).
 
-### Current implementation status (temporary exception)
+### Current implementation status (paused)
 
-The provider shipped (`WeatherUndergroundPwsProvider`) is wired with a **temporary shared
-key** passed as `WUNDERGROUND_API_KEY` via `--dart-define` (like `FFVL_API_KEY`), until the
-user-supplied-key flow exists. This knowingly bends the "never embed a key" policy: the
-value is still recoverable from a shipped binary. The gap-probing strategy below exists
-partly to make that shared key's 1500/day quota and shared provenance survivable.
+The provider shipped (`WeatherUndergroundPwsProvider`) used a **temporary shared key**
+passed as `WUNDERGROUND_API_KEY` via `--dart-define`. On 2026-11-09 that key returned
+HTTP 401 from both `v3/location/near` and `pws/observations/current`, so it is removed
+from `env.json` and from the CI build.
+
+The source is now marked unused. `WeatherUndergroundPwsProvider.awaitingValidKey` is
+`true`, so `isConfigured()` returns false, the service skips the provider, and the map
+filter disables the Wunderground PWS checkbox. Set that constant to `false` when a valid
+key returns. The policy target is still a user-supplied key, never one embedded in the
+binary.
 
 ## Discovery flow (per site, run once)
 
@@ -142,7 +147,8 @@ stations per call) while the map layer needs bbox coverage:
 
 UI: the PWS layer appears in the map filter dialog, nearby-sites screen, and about-screen
 attribution like the other providers; the marker links to
-`wunderground.com/dashboard/pws/<ID>`.
+`wunderground.com/dashboard/pws/<ID>`. While the source is paused, the filter shows its
+checkbox disabled with "Unavailable - no valid API key".
 
 ## Backlog
 

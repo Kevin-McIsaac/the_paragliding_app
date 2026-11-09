@@ -160,9 +160,15 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
   @override
   bool get requiresApiKey => true;
 
+  /// The shared key was rejected with HTTP 401 on 2026-11-09 and no valid
+  /// replacement exists yet. The source is marked unused: it never reports
+  /// itself configured, so the service skips it and the filter dialog disables
+  /// its checkbox. Set this to false when a new key ships.
+  static const bool awaitingValidKey = true;
+
   @override
   Future<bool> isConfigured() async {
-    return ApiKeys.wundergroundApiKey.isNotEmpty;
+    return !awaitingValidKey && ApiKeys.wundergroundApiKey.isNotEmpty;
   }
 
   /// Serialized background-work queue. Probes and reading passes chain here

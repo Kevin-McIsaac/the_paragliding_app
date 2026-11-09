@@ -5,6 +5,7 @@ import '../../data/models/airspace_enums.dart';
 import '../../data/models/weather_station_source.dart';
 import '../../data/models/weather_model.dart';
 import '../../services/weather_providers/weather_station_provider_registry.dart';
+import '../../services/weather_providers/weather_underground_pws_provider.dart';
 import '../../services/weather_service.dart';
 import '../../utils/preferences_helper.dart';
 import 'package:multi_dropdown/multi_dropdown.dart';
@@ -537,15 +538,23 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 }) : null,
               ),
               const SizedBox(height: 2),
-              // Weather Underground PWS provider (global, requires user key)
+              // Weather Underground PWS provider (global). Unused until a valid
+              // shared key returns: the old key was rejected with HTTP 401.
               _buildProviderCheckbox(
-                value: _wundergroundPwsEnabled,
+                value: !WeatherUndergroundPwsProvider.awaitingValidKey &&
+                    _wundergroundPwsEnabled,
                 label: 'Wunderground PWS',
-                subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.weatherUndergroundPws).description,
-                onChanged: _weatherStationsEnabled ? (value) => setState(() {
-                  _wundergroundPwsEnabled = value ?? true;
-                  _applyFiltersImmediately();
-                }) : null,
+                subtitle: WeatherUndergroundPwsProvider.awaitingValidKey
+                    ? 'Unavailable - no valid API key'
+                    : WeatherStationProviderRegistry.getProvider(
+                        WeatherStationSource.weatherUndergroundPws).description,
+                onChanged: !WeatherUndergroundPwsProvider.awaitingValidKey &&
+                        _weatherStationsEnabled
+                    ? (value) => setState(() {
+                          _wundergroundPwsEnabled = value ?? true;
+                          _applyFiltersImmediately();
+                        })
+                    : null,
               ),
               const SizedBox(height: 2),
               // Holfuy provider (global; positions from the published catalogue,
