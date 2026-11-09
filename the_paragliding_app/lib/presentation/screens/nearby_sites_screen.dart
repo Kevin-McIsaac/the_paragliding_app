@@ -348,53 +348,71 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     }
   }
 
-  /// Handle search query changes with debouncing
+  /// Handle search query changes with debouncing.
+  ///
+  /// The text field updates its own text while the pilot types, so this must
+  /// NOT rebuild the screen per character. A screen rebuild also rebuilds the
+  /// map with hundreds of markers, and that made typing lag by seconds (seen
+  /// 2026-11-09). The query state is applied after the debounce instead.
   void _onSearchChanged(String query) {
     _searchDebounce?.cancel();
+    final trimmed = query.trim();
 
-    setState(() {
-      _searchQuery = query.trim();
-    });
-
-    if (_searchQuery.isEmpty) {
+    // Clearing is cheap and should feel immediate.
+    if (trimmed.isEmpty) {
       setState(() {
+        _searchQuery = '';
         _searchResults = [];
         _isSearching = false;
       });
       return;
     }
 
-    if (_searchQuery.length < 2) {
-      return; // Don't search for very short queries
+    // Below two characters there is no search to run. Apply the query once so
+    // the overlay closes, without rebuilding on every character.
+    if (trimmed.length < 2) {
+      if (_searchQuery != trimmed) {
+        setState(() {
+          _searchQuery = trimmed;
+          _searchResults = [];
+          _isSearching = false;
+        });
+      }
+      return;
     }
 
-    // Debounce the search
+    // Debounce the search.
     _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
-      setState(() => _isSearching = true);
+      if (!mounted) return;
+      setState(() {
+        _searchQuery = trimmed;
+        _isSearching = true;
+      });
 
       try {
         // Through the bounds loader, not the database service: this searches
         // the map, so it has to agree with the map about what is on it -
         // landings included. See SiteBoundsLoaderV2.searchSitesByName.
         final results = await SiteBoundsLoaderV2.instance.searchSitesByName(
-          _searchQuery,
+          trimmed,
         );
 
-        if (mounted) {
-          setState(() {
-            _searchResults = results.take(15).toList();
-            _isSearching = false;
-          });
+        // A newer query may have started while this one ran.
+        if (!mounted || _searchQuery != trimmed) return;
 
-          // Auto-jump to single result
-          if (_searchResults.length == 1) {
-            _jumpToLocation(_searchResults.first, keepSearchActive: false);
-            setState(() {
-              _searchController.clear();
-              _searchQuery = '';
-              _searchResults = [];
-            });
-          }
+        setState(() {
+          _searchResults = results.take(15).toList();
+          _isSearching = false;
+        });
+
+        // Auto-jump to single result
+        if (_searchResults.length == 1) {
+          _jumpToLocation(_searchResults.first, keepSearchActive: false);
+          setState(() {
+            _searchController.clear();
+            _searchQuery = '';
+            _searchResults = [];
+          });
         }
       } catch (e) {
         LoggingService.error('Search failed', e);
