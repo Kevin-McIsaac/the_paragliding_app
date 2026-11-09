@@ -1,6 +1,5 @@
-• Holfuy stations are now a wind source on the nearby sites map, drawn
-  with their own peak-and-arc icon; tap one to fetch its current reading
-• Wind loads much faster when you open or pan the map, and the stations
-  at the site you are looking at now show their readings instead of
-  sitting on "wind loading..."
-• Fixed a spinner that could keep turning after you panned the map
+• Search on the nearby sites screen is responsive again: results appear
+  as you type without the map stalling on every keystroke
+• Weather Underground stations are temporarily unavailable while the
+  shared API key is replaced; the other wind sources still work
+• Fixed the tap highlight on search results
