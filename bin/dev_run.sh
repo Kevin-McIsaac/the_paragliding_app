@@ -176,6 +176,17 @@ if $is_desktop; then
   # which honours this variable
   export XDG_DOCUMENTS_DIR="$APP_DOCUMENTS"
 
+  # shared_preferences stores under XDG_DATA_HOME. Agent shells export that as
+  # /tmp/flutter-data, which disappears between runs: the catalogue date and
+  # provider toggles were lost, so every start re-downloaded the 2.2 MB
+  # catalogue and re-imported 18,761 sites (seen 2026-11-09, 8-47 s per start).
+  # Keep only that ephemeral case workspace-local; a human's normal
+  # ~/.local/share is left alone.
+  if [[ "${XDG_DATA_HOME:-}" == /tmp/* ]]; then
+    export XDG_DATA_HOME="$DEV_DATA/app_data"
+    mkdir -p "$XDG_DATA_HOME"
+  fi
+
   seed_args=(
     --dart-define=SEED_IGC_DIR="$SEED_IGC_DIR"
     --dart-define=SEED_IGC_LIMIT="$SEED_IGC_LIMIT"
@@ -190,6 +201,23 @@ mode_args=()
 if $profile; then
   mode_args+=(--profile)
   echo "Profile build: hot reload is unavailable, and startup includes an AOT compile."
+fi
+
+# Flutter 3.47 defaults to Impeller on Linux desktop. On a machine with no GPU
+# (no /dev/dri) Impeller rasterises in software and is several times slower than
+# Skia: measured 2026-11-09 at 6.2s vs 2.5s to the first screen, and ~2x slower
+# interactions. Skia is still in the engine; the hidden --no-enable-impeller flag
+# selects it. DEV_RUN_IMPELLER=1 opts back in, and an explicit flag in the
+# arguments is left alone.
+impeller_args=()
+if $is_desktop && [[ "${DEV_RUN_IMPELLER:-0}" != "1" ]]; then
+  user_impeller=false
+  for arg in ${passthrough[@]+"${passthrough[@]}"}; do
+    case "$arg" in
+      --enable-impeller|--no-enable-impeller|--enable-impeller=*) user_impeller=true ;;
+    esac
+  done
+  $user_impeller || impeller_args+=(--no-enable-impeller)
 fi
 
 cd "$APP_DIR"
@@ -220,6 +248,7 @@ run_args=(
   ${env_file_args[@]+"${env_file_args[@]}"}
   ${seed_args[@]+"${seed_args[@]}"}
   ${mode_args[@]+"${mode_args[@]}"}
+  ${impeller_args[@]+"${impeller_args[@]}"}
   ${passthrough[@]+"${passthrough[@]}"}
 )
 

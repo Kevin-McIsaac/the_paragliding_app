@@ -16,6 +16,7 @@ import '../../services/map_bounds_manager.dart';
 import '../../services/weather_service.dart';
 import '../../services/weather_station_service.dart';
 import '../../services/weather_providers/weather_station_provider_registry.dart';
+import '../../services/weather_providers/weather_underground_pws_provider.dart';
 import '../../utils/map_constants.dart';
 import '../../utils/site_utils.dart';
 import '../../utils/site_marker_utils.dart';
@@ -348,53 +349,71 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     }
   }
 
-  /// Handle search query changes with debouncing
+  /// Handle search query changes with debouncing.
+  ///
+  /// The text field updates its own text while the pilot types, so this must
+  /// NOT rebuild the screen per character. A screen rebuild also rebuilds the
+  /// map with hundreds of markers, and that made typing lag by seconds (seen
+  /// 2026-11-09). The query state is applied after the debounce instead.
   void _onSearchChanged(String query) {
     _searchDebounce?.cancel();
+    final trimmed = query.trim();
 
-    setState(() {
-      _searchQuery = query.trim();
-    });
-
-    if (_searchQuery.isEmpty) {
+    // Clearing is cheap and should feel immediate.
+    if (trimmed.isEmpty) {
       setState(() {
+        _searchQuery = '';
         _searchResults = [];
         _isSearching = false;
       });
       return;
     }
 
-    if (_searchQuery.length < 2) {
-      return; // Don't search for very short queries
+    // Below two characters there is no search to run. Apply the query once so
+    // the overlay closes, without rebuilding on every character.
+    if (trimmed.length < 2) {
+      if (_searchQuery != trimmed) {
+        setState(() {
+          _searchQuery = trimmed;
+          _searchResults = [];
+          _isSearching = false;
+        });
+      }
+      return;
     }
 
-    // Debounce the search
+    // Debounce the search.
     _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
-      setState(() => _isSearching = true);
+      if (!mounted) return;
+      setState(() {
+        _searchQuery = trimmed;
+        _isSearching = true;
+      });
 
       try {
         // Through the bounds loader, not the database service: this searches
         // the map, so it has to agree with the map about what is on it -
         // landings included. See SiteBoundsLoaderV2.searchSitesByName.
         final results = await SiteBoundsLoaderV2.instance.searchSitesByName(
-          _searchQuery,
+          trimmed,
         );
 
-        if (mounted) {
-          setState(() {
-            _searchResults = results.take(15).toList();
-            _isSearching = false;
-          });
+        // A newer query may have started while this one ran.
+        if (!mounted || _searchQuery != trimmed) return;
 
-          // Auto-jump to single result
-          if (_searchResults.length == 1) {
-            _jumpToLocation(_searchResults.first, keepSearchActive: false);
-            setState(() {
-              _searchController.clear();
-              _searchQuery = '';
-              _searchResults = [];
-            });
-          }
+        setState(() {
+          _searchResults = results.take(15).toList();
+          _isSearching = false;
+        });
+
+        // Auto-jump to single result
+        if (_searchResults.length == 1) {
+          _jumpToLocation(_searchResults.first, keepSearchActive: false);
+          setState(() {
+            _searchController.clear();
+            _searchQuery = '';
+            _searchResults = [];
+          });
         }
       } catch (e) {
         LoggingService.error('Search failed', e);
@@ -423,7 +442,12 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       final pioupiouEnabled = prefs.getBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled') ?? true;
       final ffvlEnabled = prefs.getBool('weather_provider_${WeatherStationSource.ffvl.name}_enabled') ?? true;
       final bomEnabled = prefs.getBool('weather_provider_${WeatherStationSource.bom.name}_enabled') ?? true;
-      final wundergroundPwsEnabled = prefs.getBool('weather_provider_${WeatherStationSource.weatherUndergroundPws.name}_enabled') ?? true;
+      // WU PWS is unused until a valid shared key returns (the old key was
+      // rejected with HTTP 401). Keep the saved preference untouched while it
+      // is unavailable, so the layer can come back with its old setting.
+      final wundergroundPwsEnabled =
+          !WeatherUndergroundPwsProvider.awaitingValidKey &&
+              (prefs.getBool('weather_provider_${WeatherStationSource.weatherUndergroundPws.name}_enabled') ?? true);
       final holfuyEnabled = prefs.getBool('weather_provider_${WeatherStationSource.holfuy.name}_enabled') ?? true;
 
       if (mounted) {
@@ -1781,7 +1805,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         _pioupiouEnabled = pioupiouEnabled;
         _ffvlEnabled = ffvlEnabled;
         _bomEnabled = bomEnabled;
-        _wundergroundPwsEnabled = wundergroundPwsEnabled;
+        _wundergroundPwsEnabled = wundergroundPwsEnabled &&
+            !WeatherUndergroundPwsProvider.awaitingValidKey;
         _holfuyEnabled = holfuyEnabled;
         _maxAltitudeFt = maxAltitudeFt;
       });
@@ -1799,7 +1824,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       await prefs.setBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled', pioupiouEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.ffvl.name}_enabled', ffvlEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.bom.name}_enabled', bomEnabled);
-      await prefs.setBool('weather_provider_${WeatherStationSource.weatherUndergroundPws.name}_enabled', wundergroundPwsEnabled);
+      if (!WeatherUndergroundPwsProvider.awaitingValidKey) {
+        await prefs.setBool('weather_provider_${WeatherStationSource.weatherUndergroundPws.name}_enabled', wundergroundPwsEnabled);
+      }
       await prefs.setBool('weather_provider_${WeatherStationSource.holfuy.name}_enabled', holfuyEnabled);
 
       // Handle sites visibility changes

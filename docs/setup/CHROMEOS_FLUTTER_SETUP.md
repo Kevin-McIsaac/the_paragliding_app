@@ -51,6 +51,12 @@ This machine is on **Flutter 3.47.9 stable** as of 2026-11-06; the guide previou
 pinned 3.32.8 and told you to install to `~/development/flutter`, neither of which
 matches the real setup.
 
+> **Impeller on Linux (Flutter 3.47+).** 3.47 defaults to Impeller on Linux desktop.
+> This container has no `/dev/dri`, so Impeller renders in software and is about twice as
+> slow as Skia. `bin/dev_run.sh` passes `--no-enable-impeller` for Linux desktop; set
+> `DEV_RUN_IMPELLER=1` to compare. The last stable that defaults to Skia is 3.44.9. See
+> `memoryfield/linux-impeller-slow-without-gpu.md`.
+
 ### 2. Run Flutter Doctor
 ```bash
 flutter doctor

@@ -54,6 +54,14 @@ bin/dev_run.sh --background                 # desktop
 bin/dev_run.sh -d "<device>" --background   # Android
 ```
 
+> **Linux renderer (Flutter 3.47+).** 3.47 defaults to Impeller on Linux. On this
+> GPU-less VM that is about twice as slow and it breaks `_flutter.screenshot`, so
+> `bin/dev_screenshot.sh` and `bin/dev_input.sh` stop working. `bin/dev_run.sh` now
+> passes `--no-enable-impeller` for Linux desktop; `DEV_RUN_IMPELLER=1` opts back in.
+> If the app feels slow after an upgrade, check the log for
+> `Using the Impeller rendering backend` first. See
+> `memoryfield/linux-impeller-slow-without-gpu.md`.
+
 `--background` detaches the app and returns **only once it is actually up** — or fails
 fast with the real error and the tail of the log. Agents should always use it; without it
 the command blocks until you quit the app.
