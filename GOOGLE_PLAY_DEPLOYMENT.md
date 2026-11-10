@@ -132,8 +132,7 @@ rather than on the whole repository, so no other workflow can read them.
 | `ANDROID_KEY_PASSWORD` | `keyPassword` in `android/key.properties` |
 | `PLAY_STORE_SERVICE_ACCOUNT_JSON` | **still to be set** — see below |
 
-**Repository secrets** (shared with `ci.yml`): `FFVL_API_KEY`, `OPENAIP_API_KEY`,
-`CESIUM_ION_TOKEN`.
+**Repository secrets** (shared with `ci.yml`): `OPENAIP_API_KEY`, `CESIUM_ION_TOKEN`.
 
 ### Remaining setup: the Play service account
 

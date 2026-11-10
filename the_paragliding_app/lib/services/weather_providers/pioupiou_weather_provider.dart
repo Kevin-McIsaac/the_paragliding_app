@@ -15,7 +15,7 @@ import 'weather_station_provider.dart';
 /// Uses global caching strategy optimized for small network:
 /// - Fetches ALL stations once (instead of per-bbox like METAR/NWS)
 /// - Station list cached for 24 hours (locations don't change)
-/// - Measurements cached for 20 minutes (wind data updates frequently)
+/// - Measurements cached for 5 minutes (the network updates about every 5 minutes)
 /// - Filters cached data to bbox in-memory (instant pan/zoom)
 ///
 /// Wind data is already in km/h (no conversion needed)
@@ -104,7 +104,7 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
           return []; // Skip API call - no stations to show
         }
 
-        // Step 3: We have stations - check if measurements are stale (>20min)
+        // Step 3: We have stations - check if measurements are stale (>5min)
         if (_globalCache!.measurementsExpired) {
           LoggingService.info('Pioupiou measurements expired, refreshing');
           onApiCallStart?.call(); // Notify UI that API call is starting
@@ -476,7 +476,7 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
 }
 
 /// Global cache entry with dual timestamp tracking
-/// Allows separate TTL for station list (24hr) and measurements (20min)
+/// Allows separate TTL for station list (24hr) and measurements (5min)
 class _GlobalCacheEntry {
   final List<WeatherStation> stations;
   final DateTime stationListTimestamp;

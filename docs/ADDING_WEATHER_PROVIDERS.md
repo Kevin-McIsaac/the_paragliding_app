@@ -464,7 +464,7 @@ static const int _maxCacheSize = 20;  // Limit memory usage
 class _GlobalCacheEntry {
   final List<WeatherStation> stations;
   final DateTime stationListTimestamp;    // 24hr TTL
-  final DateTime measurementsTimestamp;   // 20min TTL
+  final DateTime measurementsTimestamp;   // 5min TTL
 
   bool get stationListExpired =>
       DateTime.now().difference(stationListTimestamp) >
@@ -472,7 +472,7 @@ class _GlobalCacheEntry {
 
   bool get measurementsExpired =>
       DateTime.now().difference(measurementsTimestamp) >
-      MapConstants.pioupiouMeasurementsCacheTTL;  // 20 minutes
+      MapConstants.pioupiouMeasurementsCacheTTL;  // 5 minutes
 }
 
 _GlobalCacheEntry? _globalCache;
@@ -517,8 +517,8 @@ Separate TTLs for station locations vs. measurements:
 // Station locations: Rarely change (24hr TTL)
 static const Duration pioupiouStationListCacheTTL = Duration(hours: 24);
 
-// Wind measurements: Update frequently (20min TTL)
-static const Duration pioupiouMeasurementsCacheTTL = Duration(minutes: 20);
+// Wind measurements: Update frequently (5min TTL)
+static const Duration pioupiouMeasurementsCacheTTL = Duration(minutes: 5);
 
 Future<void> _refreshMeasurements() async {
   final stations = await _fetchAllStations();
@@ -539,7 +539,7 @@ Future<void> _refreshMeasurements() async {
 |----------|----------|--------------|-----------|--------------|----------------|
 | **Aviation Weather Center** | Bbox | ~10,000 stations | 30 min | Low (~100KB) | High (varies) |
 | **NWS** | Bbox + Grid | ~2,000 stations | Station: 24hr<br>Obs: 10min | Medium (~200KB) | Medium (1-2) |
-| **Pioupiou** | Global | ~1,000 stations | List: 24hr<br>Data: 20min | Medium (~500KB) | Low (1-3) |
+| **Pioupiou** | Global | ~1,000 stations | List: 24hr<br>Data: 5min | Medium (~500KB) | Medium (up to 12) |
 
 ### Recommended TTLs by Data Type
 
@@ -552,7 +552,7 @@ Duration.minutes(30)   // Large networks (Aviation Weather Center)
 // Wind measurements - Updates frequently
 Duration.minutes(5)    // Real-time critical
 Duration.minutes(10)   // Standard updates (NWS)
-Duration.minutes(20)   // Less frequent updates (Pioupiou)
+Duration.minutes(5)    // Fast updates (Pioupiou)
 Duration.minutes(30)   // Slow-updating networks (Aviation Weather Center)
 ```
 

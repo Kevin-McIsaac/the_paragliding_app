@@ -16,8 +16,8 @@ enum WeatherStationSource {
   /// Community wind stations with global coverage
   pioupiou,
 
-  /// FFVL (French Free Flight Federation) from data.ffvl.fr
-  /// Weather beacons primarily in France and Europe
+  /// FFVL (French Free Flight Federation) from data.gouv.fr
+  /// Weather beacons in France
   ffvl,
 
   /// Bureau of Meteorology (BOM) from reg.bom.gov.au

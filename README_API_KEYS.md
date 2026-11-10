@@ -38,26 +38,20 @@ Anything shipped inside a client app is public. The control that actually matter
 If a key ever needs to be genuinely secret, it has to move behind a server-side proxy — the app
 would call the proxy, and only the proxy would hold the key.
 
-## Required API Keys
+## API Keys
 
-### 1. FFVL API Key (Required)
-
-- **Purpose**: French paragliding weather beacons (`data.ffvl.fr` API)
-- **Get it from**: <https://data.ffvl.fr/> (request via the FFVL data administration)
-- **Note**: Free for non-commercial use; the FFVL emails the key
-
-### 2. OpenAIP API Key (Optional)
+### 1. OpenAIP API Key (Optional)
 
 - **Purpose**: Aviation data overlays (airspaces, airports, navaids, reporting points)
 - **Get it from**: <https://www.openaip.net/>
 - **Note**: Users can also configure their own in app settings
 
-### 3. Cesium Ion Access Token (Optional)
+### 2. Cesium Ion Access Token (Optional)
 
 - **Purpose**: 3D map visualization
 - **Get it from**: <https://ion.cesium.com/tokens>
 
-### 4. Wunderground PWS Key (Optional, PAUSED)
+### 3. Wunderground PWS Key (Optional, PAUSED)
 
 - **Status**: Unused until a valid key returns. The shared key was rejected with HTTP 401 on
   2026-11-09, so it is removed from `env.json` and CI. The source stays in the code, but
@@ -98,22 +92,22 @@ flutter build appbundle --release --dart-define-from-file=env.json
 CI (`.github/workflows/build.yml`) injects each key from repository secrets. Add them under
 **Settings → Secrets and variables → Actions**:
 
-`FFVL_API_KEY`, `OPENAIP_API_KEY`, `CESIUM_ION_TOKEN`
+`OPENAIP_API_KEY`, `CESIUM_ION_TOKEN`
 
 `WUNDERGROUND_API_KEY` is deliberately absent while the WU PWS source is paused. Do not add
 it back until a valid key exists.
 
 For a local release build, pass `--dart-define-from-file=env.json` explicitly. A release built
-without it will start and run, but FFVL weather, OpenAIP overlays and Cesium 3D will all be
-unconfigured — check the startup log rather than assuming.
+without it will start and run, but OpenAIP overlays and Cesium 3D will both be unconfigured —
+check the startup log rather than assuming.
 
 ## Verifying a build
 
 The app logs key status at startup:
 
 ```
-[API_KEYS_STATUS] {ffvl_configured: true, openaip_configured: true,
-                   cesium_configured: true, wunderground_configured: false, source: dart-define}
+[API_KEYS_STATUS] {openaip_configured: true, cesium_configured: true,
+                   wunderground_configured: false, source: dart-define}
 ```
 
 `wunderground_configured: false` is expected: the WU PWS source is paused.
@@ -133,7 +127,6 @@ re-requesting, and search Gmail for the confirmation message first (cheapest rec
 
 | Key | Provider portal | How to retrieve / reissue | Format hint |
 |---|---|---|---|
-| `FFVL_API_KEY` | <https://data.ffvl.fr/> | Email FFVL data administration. They reply with "voici votre clé API FFVL : ..." | 32-char lowercase hex |
 | `OPENAIP_API_KEY` | <https://www.openaip.net/> | Log in → user profile → API keys → regenerate or copy existing | 32-char lowercase hex |
 | `CESIUM_ION_TOKEN` | <https://ion.cesium.com/tokens> | Log in → Access Tokens → create a new token or copy the default | JWT, starts with `eyJ...` |
 | `WUNDERGROUND_API_KEY` | <https://www.wunderground.com/member/api-keys> | Paused: no key in env.json or CI. Log in → member profile → API keys (requires an active PWS device entry) when a replacement is needed | 32-char alphanumeric |

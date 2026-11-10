@@ -110,11 +110,6 @@ main() {
         echo "Found .env file. Reading API keys..."
         source the_paragliding_app/.env
 
-        read -p "Use FFVL_API_KEY from .env? (y/n): " USE_ENV
-        if [ "$USE_ENV" != "y" ]; then
-            read -p "Enter FFVL API key: " FFVL_API_KEY
-        fi
-
         read -p "Use other keys from .env? (y/n): " USE_OTHER_ENV
         if [ "$USE_OTHER_ENV" != "y" ]; then
             read -p "Enter Google Maps API key (optional): " GOOGLE_MAPS_API_KEY
@@ -122,7 +117,6 @@ main() {
             read -p "Enter Cesium Ion token (optional): " CESIUM_ION_TOKEN
         fi
     else
-        read -p "Enter FFVL API key: " FFVL_API_KEY
         read -p "Enter Google Maps API key (optional): " GOOGLE_MAPS_API_KEY
         read -p "Enter OpenAIP API key (optional): " OPENAIP_API_KEY
         read -p "Enter Cesium Ion token (optional): " CESIUM_ION_TOKEN
@@ -144,7 +138,6 @@ main() {
     fi
 
     # Add API keys
-    [ -n "$FFVL_API_KEY" ] && add_secret "FFVL_API_KEY" "$FFVL_API_KEY" "$REPO"
     [ -n "$GOOGLE_MAPS_API_KEY" ] && add_secret "GOOGLE_MAPS_API_KEY" "$GOOGLE_MAPS_API_KEY" "$REPO"
     [ -n "$OPENAIP_API_KEY" ] && add_secret "OPENAIP_API_KEY" "$OPENAIP_API_KEY" "$REPO"
     [ -n "$CESIUM_ION_TOKEN" ] && add_secret "CESIUM_ION_TOKEN" "$CESIUM_ION_TOKEN" "$REPO"

@@ -261,17 +261,14 @@ jobs:
       # what gets executed; "$VAR" is just a value.
       - name: Build APK and App Bundle
         env:
-          FFVL_API_KEY: ${{ secrets.FFVL_API_KEY }}
           OPENAIP_API_KEY: ${{ secrets.OPENAIP_API_KEY }}
           CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
         run: |
           cd the_paragliding_app
           flutter build apk --release \
-            --dart-define=FFVL_API_KEY="$FFVL_API_KEY" \
             --dart-define=OPENAIP_API_KEY="$OPENAIP_API_KEY" \
             --dart-define=CESIUM_ION_TOKEN="$CESIUM_ION_TOKEN"
           flutter build appbundle --release \
-            --dart-define=FFVL_API_KEY="$FFVL_API_KEY" \
             --dart-define=OPENAIP_API_KEY="$OPENAIP_API_KEY" \
             --dart-define=CESIUM_ION_TOKEN="$CESIUM_ION_TOKEN"
 
