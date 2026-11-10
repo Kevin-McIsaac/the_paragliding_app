@@ -39,11 +39,14 @@ class MapConstants {
 
   // Pioupiou-specific caching (global station list strategy)
   static const Duration pioupiouStationListCacheTTL = Duration(hours: 24); // Stations don't move
-  static const Duration pioupiouMeasurementsCacheTTL = Duration(minutes: 20); // Wind updates frequently
+  static const Duration pioupiouMeasurementsCacheTTL = Duration(minutes: 5); // Readings update about every 5 minutes
 
   // FFVL-specific caching (global beacon list strategy, similar to Pioupiou)
-  static const Duration ffvlBeaconListCacheTTL = Duration(hours: 24); // Beacons don't move
-  static const Duration ffvlMeasurementsCacheTTL = Duration(minutes: 5); // FFVL updates every minute
+  static const Duration ffvlBeaconListCacheTTL = Duration(hours: 24); // Beacon list published daily
+  static const Duration ffvlMeasurementsCacheTTL = Duration(minutes: 5); // Readings published every 5 minutes
+  // releves.json keeps the last reading of an offline beacon. Show it only
+  // while it can still describe the wind a pilot would fly in.
+  static const Duration ffvlMeasurementMaxAge = Duration(hours: 2);
 
   // BOM-specific caching (state-based global cache strategy)
   static const Duration bomStationListCacheTTL = Duration(hours: 24); // Station locations don't change

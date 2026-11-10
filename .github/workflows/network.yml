@@ -15,6 +15,8 @@ name: Live services
 #     at 11,690 rows against 18,761 for long enough to lose every DHV launch and
 #     every landing, and the test that should have caught it stayed green;
 #   * the OpenAIP export bucket being locked down again, as it was in July 2026;
+#   * the FFVL data.gouv.fr resource ids or file schema changing under the
+#     provider that reads them;
 #   * the published catalogue changing a launch's name, altitude, wind or which
 #     guide it is named by, under a baseline that pins all four.
 #

@@ -10,8 +10,8 @@ The Paragliding App integrates with multiple weather station providers to displa
 |----------|----------|---------|--------------|----------|------------------|
 | Aviation Weather Center | Global airports | No | ✅ Yes | Direct bbox query | Varies (1-60min) |
 | Bureau of Meteorology (BOM) | Australia | No | ❌ No | State-based fetch | 10 minutes |
-| FFVL Beacons | France/Europe | Yes | ❌ No | Global fetch-all | 5 minutes |
-| Pioupiou (OpenWindMap) | Global | No | ❌ No | Global fetch-all | 20 minutes |
+| FFVL Beacons | France | No | ❌ No | Global fetch-all (two files) | 5 minutes |
+| Pioupiou (OpenWindMap) | Global | No | ❌ No | Global fetch-all | 5 minutes |
 | NWS Observations | US only | No | ❌ No | Grid-based lookup | 10 minutes |
 
 ## Bounding Box Support
@@ -90,56 +90,53 @@ final filtered = stations.where((station) {
 
 #### 2. FFVL Beacons - Global Fetch-All
 
-**Implementation**: `ffvl_weather_provider.dart:208`
+**Implementation**: `ffvl_weather_provider.dart`
 
 **Strategy**:
-- Fetches ALL beacons globally (~650 beacons)
-- Two API endpoints: beacon list + measurements
-- Calculates bbox from returned stations
-- Filters cached data to bbox in-memory
-- Early exit if cached bbox doesn't overlap with view
+- Fetches the whole FFVL catalogue once every 24 hours
+- Fetches the readings file once every 5 minutes
+- No API key
+- Calculates bbox from the catalogue and filters it in-memory
+- Early exit if the cached bbox does not overlap the view
 
 **Code Reference**:
 ```dart
-// Fetch all beacons
-final beaconListUrl = Uri.parse(
-  '$_baseUrl?base=balises&r=list&mode=json&key=$apiKey',
-);
-
-// Calculate bbox from stations (line 706-729)
-final cachedBounds = _calculateBoundsFromStations(stations);
-
-// Early exit optimization (line 66-76)
-if (_globalCache != null && !_globalCache!.beaconListExpired) {
-  if (!_boundsOverlap(bounds, _globalCache!.bounds)) {
-    return []; // Skip this provider - no overlap
-  }
-}
-
-// In-memory filtering (line 688-704)
-final filtered = stations.where((station) {
-  return bounds.contains(LatLng(station.latitude, station.longitude));
-}).toList();
+static const String _balisesUrl =
+    'https://www.data.gouv.fr/api/1/datasets/r/8d795154-9145-4ab2-99de-6768a36f31ea';
+static const String _relevesUrl =
+    'https://www.data.gouv.fr/api/1/datasets/r/047b2ab9-627f-4e5f-9d68-5b948433c61d';
 ```
 
+The `/api/1/datasets/r/<id>` URL returns a 302 to the current dated file.
+Never use the dated `static.data.gouv.fr` URL: it changes on every publish and
+is served with `Cache-Control: max-age=2592000`.
+
 **API Endpoints**:
-- Beacon list: `https://data.ffvl.fr/api/?base=balises&r=list&mode=json`
-- Measurements: `https://data.ffvl.fr/api/?base=balises&r=releves_meteo`
+- Beacon list: `https://www.data.gouv.fr/api/1/datasets/r/8d795154-9145-4ab2-99de-6768a36f31ea`
+- Readings: `https://www.data.gouv.fr/api/1/datasets/r/047b2ab9-627f-4e5f-9d68-5b948433c61d`
 
 **Caching Strategy**:
-- Beacon list: 24 hours (locations don't change)
-- Measurements: 5 minutes (FFVL updates every minute)
+- Beacon list: 24 hours (published daily)
+- Readings: 5 minutes (published every 5 minutes)
+- The 5-minute refresh downloads only `releves.json`, never `balises.json`
 - Global cache with calculated bbox for overlap detection
 
 **Performance**:
-- Initial fetch: ~650 beacons
+- Initial fetch: about 237 KB of beacons plus 33 KB of readings
+- Subsequent refresh: about 33 KB every 5 minutes
 - Subsequent views: Instant (in-memory filter)
 - Smart overlap detection prevents unnecessary API calls
 
 **Special Features**:
-- Filters out beacons in maintenance (`en_maintenance == '1'`)
+- Filters out beacons in maintenance (`en_maintenance == 1` or `"1"`)
+- Drops readings older than 2 hours
 - French department name mapping for display
-- Multiple station types: FFVL, PIOUPIOU, OPENWINDMAP
+- Multiple station types: ADISON, OPENWINDMAP, HOLFUY, SENCROP, CTIC and others
+- OpenWindMap beacons have no readings here; the Pioupiou layer supplies them
+
+**Error Handling**:
+- A 404 or 410 from a resource logs `FFVL_RESOURCE_GONE` and keeps the last cache
+- A failed readings refresh keeps the previous stations
 
 #### 3. Pioupiou (OpenWindMap) - Global Fetch-All
 
@@ -179,7 +176,7 @@ final filtered = stations.where((station) {
 
 **Caching Strategy**:
 - Station list: 24 hours (locations don't change)
-- Measurements: 20 minutes (wind data updates frequently)
+- Measurements: 5 minutes (the network updates about every 5 minutes)
 - Global cache with calculated bbox for overlap detection
 
 **Performance**:
@@ -274,7 +271,7 @@ Providers use separate TTLs for station lists vs. measurements:
 class _CacheEntry {
   final List<WeatherStation> stations;
   final DateTime stationListTimestamp;    // 24-hour TTL
-  final DateTime measurementsTimestamp;   // 5-20 minute TTL
+  final DateTime measurementsTimestamp;   // 5-30 minute TTL
 
   bool get stationListExpired { /* ... */ }
   bool get measurementsExpired { /* ... */ }
@@ -283,7 +280,7 @@ class _CacheEntry {
 
 **Benefits**:
 - Station locations cached for 24 hours (rarely change)
-- Measurements refreshed frequently (5-20 minutes)
+- Measurements refreshed frequently (5-30 minutes)
 - Reduces API calls while maintaining fresh data
 
 ### Cache TTL Summary
@@ -293,7 +290,7 @@ class _CacheEntry {
 | Aviation Weather Center | 1 hour | 1 hour |
 | BOM | 24 hours | 10 minutes |
 | FFVL | 24 hours | 5 minutes |
-| Pioupiou | 24 hours | 20 minutes |
+| Pioupiou | 24 hours | 5 minutes |
 | NWS | 24 hours | 10 minutes |
 
 ## Performance Optimizations
@@ -383,7 +380,7 @@ class WindData {
 |----------|------------------|---------------|
 | Aviation Weather Center | No | N/A |
 | BOM | No | N/A |
-| FFVL | Yes | `ApiKeys.ffvlApiKey` |
+| FFVL | No | N/A |
 | Pioupiou | No | N/A |
 | NWS | No | N/A |
 
@@ -395,7 +392,8 @@ Providers handle requests outside their coverage area gracefully:
 
 **Aviation Weather Center**: Returns 204 No Content (empty list)
 **BOM**: Returns empty list if no states overlap
-**FFVL**: Early exit if cached bbox doesn't overlap
+**FFVL**: Early exit if the cached bbox does not overlap. A 404 or 410 for a
+resource keeps the last cache.
 **Pioupiou**: Early exit if cached bbox doesn't overlap
 **NWS**: Returns 404 from `/points` endpoint, cached as empty
 

@@ -193,7 +193,7 @@ class _AppInitializerState extends State<AppInitializer> {
 
   Future<void> _warmWeatherCaches() async {
     // Same gate as WeatherStationService._getEnabledProviders: skip providers
-    // that are unconfigured (e.g. missing FFVL key) or disabled in settings -
+    // that are unconfigured (e.g. a paused provider) or disabled in settings -
     // a warm-up must not override either.
     await Future.wait(WeatherStationProviderRegistry.getAllProviders()
         .map((provider) async {

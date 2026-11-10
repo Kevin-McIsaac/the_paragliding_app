@@ -18,12 +18,9 @@ import 'logging_service.dart';
 ///
 /// Usage:
 /// ```dart
-/// final apiKey = ApiKeys.ffvlApiKey;
+/// final apiKey = ApiKeys.openAipApiKey;
 /// ```
 class ApiKeys {
-  /// FFVL (French Free Flight Federation) Weather API Key
-  static const String ffvlApiKey = String.fromEnvironment('FFVL_API_KEY');
-
   /// OpenAIP API Key (optional, user-configurable in app settings)
   static const String openAipApiKey = String.fromEnvironment('OPENAIP_API_KEY');
 
@@ -40,28 +37,19 @@ class ApiKeys {
   static const String wundergroundApiKey = String.fromEnvironment('WUNDERGROUND_API_KEY');
 
   static bool get _anyKeyConfigured =>
-      ffvlApiKey.isNotEmpty || openAipApiKey.isNotEmpty || cesiumIonToken.isNotEmpty || wundergroundApiKey.isNotEmpty;
+      openAipApiKey.isNotEmpty || cesiumIonToken.isNotEmpty || wundergroundApiKey.isNotEmpty;
 
-  /// Log which keys are configured, and warn about the one the app needs.
+  /// Log which keys are configured.
   ///
   /// Called once at startup. This is the quickest way to tell whether a build
   /// picked up its keys - a release built without `--dart-define` reports every
   /// key as unconfigured rather than failing loudly.
   static void logStatus() {
     LoggingService.structured('API_KEYS_STATUS', {
-      'ffvl_configured': ffvlApiKey.isNotEmpty,
       'openaip_configured': openAipApiKey.isNotEmpty,
       'cesium_configured': cesiumIonToken.isNotEmpty,
       'wunderground_configured': wundergroundApiKey.isNotEmpty,
-      // Any key being set proves the defines landed. Keying this off FFVL alone
-      // reported "none" for a build that had OpenAIP and Cesium but no FFVL
-      // secret - contradicting the openaip_configured: true on the same line.
       'source': _anyKeyConfigured ? 'dart-define' : 'none',
     });
-
-    if (ffvlApiKey.isEmpty) {
-      LoggingService.warning(
-          'No FFVL API key. Pass --dart-define-from-file=env.json (see README_API_KEYS.md)');
-    }
   }
 }

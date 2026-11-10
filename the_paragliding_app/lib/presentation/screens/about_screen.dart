@@ -358,9 +358,20 @@ class _AboutScreenState extends State<AboutScreen> {
                     ),
                     // FFVL
                     AppAttributionLink.compact(
-                      url: 'https://federation.ffvl.fr',
+                      url: 'https://www.data.gouv.fr/datasets/reseau-de-balises-meteo-de-la-ffvl-federation-francaise-de-vol-libre',
                       icon: Icons.flight,
-                      text: 'FFVL (French Free Flight Federation)',
+                      text: 'FFVL weather beacons (data.gouv.fr)',
+                    ),
+                    // The Etalab 2.0 licence requires credit. Indented like the
+                    // guide licences above so it reads as belonging to the
+                    // FFVL entry.
+                    Padding(
+                      padding: const EdgeInsets.only(left: 28, top: 4),
+                      child: AppAttributionLink.compact(
+                        url: 'https://www.etalab.gouv.fr/licence-ouverte-open-licence',
+                        icon: Icons.copyright,
+                        text: 'Licence Ouverte 2.0 (Etalab)',
+                      ),
                     ),
                     // Bureau of Meteorology
                     AppAttributionLink.compact(

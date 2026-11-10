@@ -24,6 +24,7 @@ Welcome to The Paragliding App documentation. All documentation is organized in 
 - **[Site Catalogue Requirements](SITE_CATALOGUE_REQUIREMENTS.md)** - Bundled site catalogue rules
 - **[Weather Station Sources](WEATHER_STATION_SOURCES.md)** - The seven station layers, their coverage, and their API keys
 - **[Adding Weather Providers](ADDING_WEATHER_PROVIDERS.md)** - Guide to integrating new weather data sources
+- **[FFVL data.gouv.fr design](PLAN-ffvl-data-gouv.md)** - The FFVL beacon source migration and its decisions
 - **[PR Review](PR_REVIEW.md)** - Advisory review workflow and provider setup
 - **[DSH Setup](DSH.md)** - Run this repo under DSH
 - **[Archive: Claude Code](archive/claude-code/README.md)** - Retired Claude Code setup and notes

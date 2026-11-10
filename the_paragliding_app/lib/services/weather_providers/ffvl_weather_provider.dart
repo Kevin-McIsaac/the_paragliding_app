@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -7,31 +8,51 @@ import '../../data/models/weather_station_source.dart';
 import '../../data/models/wind_data.dart';
 import '../../utils/map_constants.dart';
 import '../logging_service.dart';
-import '../api_keys.dart';
 import 'weather_station_provider.dart';
 
-/// FFVL (French Free Flight Federation) weather beacon provider from data.ffvl.fr
-/// Provides weather beacons primarily in France and Europe (~650 beacons)
+/// FFVL (French Free Flight Federation) weather beacon provider from
+/// data.gouv.fr.
 ///
-/// Uses global caching strategy optimized for small network:
-/// - Fetches ALL beacons once (instead of per-bbox)
-/// - Beacon list cached for 24 hours (locations don't change)
-/// - Measurements cached for 5 minutes (FFVL updates every minute)
-/// - Filters cached data to bbox in-memory (instant pan/zoom)
+/// The federation publishes two public files. No key is required.
+/// - `balises.json`: the beacon list, published daily (about 237 KB).
+/// - `releves.json`: the latest reading per beacon, published every 5 minutes
+///   (about 33 KB).
 ///
-/// Wind data is already in km/h (no conversion needed)
+/// The cache keeps the parsed beacon list and the derived stations separately,
+/// so a reading refresh downloads only the 33 KB file. The dated static URLs
+/// change on every publish and are served with a 30-day cache, so the provider
+/// uses the stable resource-id URLs instead.
+///
+/// OpenWindMap beacons are in the list but have no readings in `releves.json`.
+/// The Pioupiou layer supplies those stations, and the service deduplicates
+/// them within 150 m.
+///
+/// Wind data is already in km/h (no conversion needed).
 class FfvlWeatherProvider implements WeatherStationProvider {
   static final FfvlWeatherProvider instance = FfvlWeatherProvider._();
   FfvlWeatherProvider._();
 
-  // FFVL API endpoints (HTTPS with trailing slash)
-  static const String _baseUrl = 'https://data.ffvl.fr/api/';
+  // Stable data.gouv.fr resource ids. The 302 behind each id points at the
+  // current dated file, so this never goes stale.
+  static const String _balisesUrl =
+      'https://www.data.gouv.fr/api/1/datasets/r/8d795154-9145-4ab2-99de-6768a36f31ea';
+  static const String _relevesUrl =
+      'https://www.data.gouv.fr/api/1/datasets/r/047b2ab9-627f-4e5f-9d68-5b948433c61d';
+  static const String _stationUrl =
+      'https://www.balisemeteo.com/balise.php?idBalise=';
+  static const Duration _requestTimeout = Duration(seconds: 30);
+
+  http.Client _httpClient = http.Client();
+
+  @visibleForTesting
+  set httpClientForTest(http.Client client) => _httpClient = client;
 
   /// Global cache entry (single entry for all beacons)
   _GlobalCacheEntry? _globalCache;
 
   /// Pending global request to prevent duplicate API calls
-  Future<List<WeatherStation>>? _pendingGlobalRequest;
+  Future<void>? _pendingCatalogue;
+  Future<void>? _pendingReadings;
 
   @override
   WeatherStationSource get source => WeatherStationSource.ffvl;
@@ -45,112 +66,82 @@ class FfvlWeatherProvider implements WeatherStationProvider {
   String get displayName => 'FFVL Beacons';
 
   @override
-  String get description => 'French paragliding weather beacons';
+  String get description => 'French paragliding weather beacons (data.gouv.fr)';
 
   @override
-  String get attributionName => 'FFVL (French Free Flight Federation)';
+  String get attributionName => 'FFVL (data.gouv.fr)';
 
   @override
-  String get attributionUrl => 'https://federation.ffvl.fr/';
+  String get attributionUrl =>
+      'https://www.data.gouv.fr/datasets/reseau-de-balises-meteo-de-la-ffvl-federation-francaise-de-vol-libre';
 
   @override
   Duration get cacheTTL => MapConstants.ffvlMeasurementsCacheTTL;
 
   @override
-  bool get requiresApiKey => true;
+  bool get requiresApiKey => false;
 
   @override
-  Future<bool> isConfigured() async {
-    // Check if API key is configured
-    return ApiKeys.ffvlApiKey.isNotEmpty;
-  }
+  Future<bool> isConfigured() async => true;
 
   @override
   Future<List<WeatherStation>> fetchStations(
     LatLngBounds bounds, {
     Function()? onApiCallStart,
-    void Function(List<WeatherStation>)? onStationsUpdated,
+    void Function(List<WeatherStation> stations, {bool passComplete})?
+        onStationsUpdated,
     LatLng? focusPoint,
     void Function(String message)? onError,
   }) async {
     try {
-      // Early exit: Check if cached bbox overlaps with requested bounds
-      if (_globalCache != null && !_globalCache!.beaconListExpired) {
-        if (!_boundsOverlap(bounds, _globalCache!.bounds)) {
-          LoggingService.structured('FFVL_BBOX_NO_OVERLAP', {
-            'requested': '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
-            'cached': '${_globalCache!.bounds.south},${_globalCache!.bounds.west},'
-                      '${_globalCache!.bounds.north},${_globalCache!.bounds.east}',
-          });
-          return []; // Skip this provider - no overlap with view
-        }
+      final cache = _globalCache;
+
+      // Early exit: the fresh catalogue does not cover this view.
+      if (cache != null &&
+          !cache.beaconListExpired &&
+          !_boundsOverlap(bounds, cache.bounds)) {
+        LoggingService.structured('FFVL_BBOX_NO_OVERLAP', {
+          'requested':
+              '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
+          'cached':
+              '${cache.bounds.south},${cache.bounds.west},'
+              '${cache.bounds.north},${cache.bounds.east}',
+        });
+        return [];
       }
 
-      // Step 1: Check if beacon list cache is valid (<24hr)
-      if (_globalCache != null && !_globalCache!.beaconListExpired) {
-        // Step 2: Check if ANY stations exist in current view
-        final hasStationsInView = _globalCache!.stations.any((s) =>
-          bounds.contains(LatLng(s.latitude, s.longitude))
+      if (cache == null || cache.beaconListExpired) {
+        await _ensureCatalogue(onApiCallStart);
+      } else if (cache.measurementsExpired) {
+        final hasStationsInView = cache.stations.any(
+          (s) => bounds.contains(LatLng(s.latitude, s.longitude)),
         );
 
         if (!hasStationsInView) {
-          // No stations to display - skip measurement refresh API call
           LoggingService.structured('FFVL_NO_STATIONS_IN_VIEW', {
-            'bounds': '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
-            'cached_bbox': '${_globalCache!.bounds.south},${_globalCache!.bounds.west},'
-                          '${_globalCache!.bounds.north},${_globalCache!.bounds.east}',
-            'total_cached_stations': _globalCache!.stations.length,
+            'bounds':
+                '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
+            'total_cached_stations': cache.stations.length,
           });
-          return []; // Skip API call - no stations to show
-        }
-
-        // Step 3: We have stations - check if measurements are stale (>5min)
-        if (_globalCache!.measurementsExpired) {
-          LoggingService.info('FFVL measurements expired, refreshing');
-          onApiCallStart?.call(); // Notify UI that API call is starting
-          await _refreshMeasurements();
-        } else {
-          LoggingService.structured('FFVL_CACHE_HIT', {
-            'total_beacons': _globalCache!.stations.length,
-            'beacon_list_age_min': DateTime.now()
-                .difference(_globalCache!.beaconListTimestamp)
-                .inMinutes,
-            'measurements_age_min': DateTime.now()
-                .difference(_globalCache!.measurementsTimestamp)
-                .inMinutes,
-          });
-        }
-
-        // Step 4: Filter to bbox and return
-        return _filterStationsToBounds(_globalCache!.stations, bounds);
-      }
-
-      // Step 4: No valid cache - fetch everything from API
-      if (_pendingGlobalRequest != null) {
-        LoggingService.info('Waiting for pending FFVL global request');
-        await _pendingGlobalRequest;
-        // Check if the request succeeded and cache was populated
-        if (_globalCache != null) {
-          return _filterStationsToBounds(_globalCache!.stations, bounds);
-        } else {
-          // Request failed, return empty list
-          LoggingService.warning('FFVL global request completed but cache is null');
           return [];
         }
+
+        await _ensureReadings(onApiCallStart);
+      } else {
+        LoggingService.structured('FFVL_CACHE_HIT', {
+          'total_beacons': cache.stations.length,
+          'beacon_list_age_min': DateTime.now()
+              .difference(cache.beaconListTimestamp)
+              .inMinutes,
+          'measurements_age_min': DateTime.now()
+              .difference(cache.measurementsTimestamp)
+              .inMinutes,
+        });
       }
 
-      // Fetch all beacons
-      onApiCallStart?.call(); // Notify UI that API call is starting
-      _pendingGlobalRequest = _fetchAllBeacons();
-      try {
-        await _pendingGlobalRequest;
-        if (_globalCache == null) {
-          return []; // Failed to fetch
-        }
-        return _filterStationsToBounds(_globalCache!.stations, bounds);
-      } finally {
-        _pendingGlobalRequest = null;
-      }
+      final current = _globalCache;
+      if (current == null) return [];
+      return _filterStationsToBounds(current.stations, bounds);
     } catch (e, stackTrace) {
       LoggingService.error('Failed to fetch FFVL beacons', e, stackTrace);
       return [];
@@ -166,7 +157,7 @@ class FfvlWeatherProvider implements WeatherStationProvider {
       return;
     }
     // A world bbox goes through the normal fetch/refresh path: it overlaps
-    // any cached area, so a valid beacon list only refreshes measurements
+    // any cached area, so a valid beacon list only refreshes readings
     // and an empty cache does the full global fetch.
     await fetchStations(LatLngBounds(LatLng(-90, -180), LatLng(90, 180)));
   }
@@ -177,8 +168,8 @@ class FfvlWeatherProvider implements WeatherStationProvider {
   ) async {
     if (stations.isEmpty) return {};
 
-    // FFVL stations already have wind data embedded (like METAR and Pioupiou)
-    // Just extract it and map by station key
+    // FFVL stations already have wind data embedded (like METAR and Pioupiou).
+    // Just extract it and map by station key.
     final Map<String, WindData> result = {};
     for (final station in stations) {
       if (station.windData != null) {
@@ -197,169 +188,109 @@ class FfvlWeatherProvider implements WeatherStationProvider {
   @override
   void clearCache() {
     _globalCache = null;
-    _pendingGlobalRequest = null;
+    _pendingCatalogue = null;
+    _pendingReadings = null;
     LoggingService.info('FFVL global cache cleared');
   }
 
   @override
   Map<String, dynamic> getCacheStats() {
-    if (_globalCache == null) {
+    final cache = _globalCache;
+    if (cache == null) {
       return {
         'cached': false,
         'total_beacons': 0,
       };
     }
 
-    final beaconAge = DateTime.now().difference(_globalCache!.beaconListTimestamp);
-    final measurementAge = DateTime.now().difference(_globalCache!.measurementsTimestamp);
+    final beaconAge = DateTime.now().difference(cache.beaconListTimestamp);
+    final measurementAge = DateTime.now().difference(cache.measurementsTimestamp);
 
     return {
       'cached': true,
-      'total_beacons': _globalCache!.stations.length,
-      'beacons_with_data': _globalCache!.stations.where((s) => s.windData != null).length,
+      'total_beacons': cache.beacons.length,
+      'beacons_with_data': cache.stations.where((s) => s.windData != null).length,
       'beacon_list_age_minutes': beaconAge.inMinutes,
       'measurements_age_minutes': measurementAge.inMinutes,
-      'beacon_list_expired': _globalCache!.beaconListExpired,
-      'measurements_expired': _globalCache!.measurementsExpired,
+      'beacon_list_expired': cache.beaconListExpired,
+      'measurements_expired': cache.measurementsExpired,
     };
   }
 
-  /// Fetch all beacons from FFVL API
-  /// Fetches both beacon list and measurements to get complete data
-  Future<List<WeatherStation>> _fetchAllBeacons() async {
+  /// Test seam: rewrite the cache timestamps so the TTL paths can be exercised
+  /// without waiting 5 minutes or 24 hours.
+  @visibleForTesting
+  void setCacheAgeForTest({
+    Duration beaconListAge = Duration.zero,
+    Duration measurementsAge = Duration.zero,
+  }) {
+    final cache = _globalCache;
+    if (cache == null) return;
+    final now = DateTime.now();
+    _globalCache = _GlobalCacheEntry(
+      beacons: cache.beacons,
+      stations: cache.stations,
+      beaconListTimestamp: now.subtract(beaconListAge),
+      measurementsTimestamp: now.subtract(measurementsAge),
+      bounds: cache.bounds,
+    );
+  }
+
+  /// Load the beacon list and readings once, at most every 24 hours.
+  Future<void> _ensureCatalogue(Function()? onApiCallStart) async {
+    final pending = _pendingCatalogue;
+    if (pending != null) {
+      await pending;
+      return;
+    }
+
+    onApiCallStart?.call();
+    final future = _loadCatalogue();
+    _pendingCatalogue = future;
     try {
-      final stopwatch = Stopwatch()..start();
+      await future;
+    } finally {
+      _pendingCatalogue = null;
+    }
+  }
 
-      // Fetch beacon list first
-      final apiKey = ApiKeys.ffvlApiKey;
-      final beaconListUrl = Uri.parse(
-        '$_baseUrl?base=balises&r=list&mode=json&key=$apiKey',
-      );
+  /// Refresh only the readings, at most every 5 minutes.
+  Future<void> _ensureReadings(Function()? onApiCallStart) async {
+    final pending = _pendingReadings;
+    if (pending != null) {
+      await pending;
+      return;
+    }
 
-      LoggingService.structured('FFVL_REQUEST_START', {
-        'url': beaconListUrl.toString().replaceAll(apiKey, '***'),
-        'strategy': 'fetch_all_global',
-      });
+    onApiCallStart?.call();
+    final future = _refreshReadings();
+    _pendingReadings = future;
+    try {
+      await future;
+    } finally {
+      _pendingReadings = null;
+    }
+  }
 
-      final beaconListResponse = await http.get(
-        beaconListUrl,
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'TheParaglidingApp/1.0',
-        },
-      ).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          stopwatch.stop();
-          LoggingService.structured('FFVL_TIMEOUT', {
-            'url': 'beacon_list',
-            'duration_ms': stopwatch.elapsedMilliseconds,
-            'timeout_seconds': 30,
-          });
-          return http.Response('{"error": "Request timeout"}', 408);
-        },
-      );
+  Future<void> _loadCatalogue() async {
+    final stopwatch = Stopwatch()..start();
+    try {
+      final balisesJson = await _fetchJson(_balisesUrl, 'balises');
+      if (balisesJson == null) return; // keep any old cache
 
-      if (beaconListResponse.statusCode != 200) {
-        LoggingService.structured('FFVL_HTTP_ERROR', {
-          'endpoint': 'beacon_list',
-          'status_code': beaconListResponse.statusCode,
-          'duration_ms': stopwatch.elapsedMilliseconds,
-        });
-        return [];
+      final parsedBeacons = _parseBeacons(balisesJson);
+      if (parsedBeacons.active.isEmpty) {
+        LoggingService.warning('FFVL beacon list parsed to zero active beacons');
+        return;
       }
 
-      // Parse beacon list
-      final List<dynamic> beaconList = jsonDecode(beaconListResponse.body);
+      final readingsJson = await _fetchJson(_relevesUrl, 'releves');
+      final parsedReadings = readingsJson == null
+          ? const _ParsedReadings(<String, WindData>{}, 0)
+          : _parseReadings(readingsJson, now: DateTime.now());
 
-      // Create a map for quick lookup
-      final Map<String, Map<String, dynamic>> beaconMap = {};
-      for (final beacon in beaconList) {
-        // The API is inconsistent about whether ids are strings or numbers,
-        // so normalise rather than cast
-        final id = beacon['idBalise']?.toString();
-        if (id != null) {
-          beaconMap[id] = beacon as Map<String, dynamic>;
-        }
-      }
-
-      // Fetch current measurements
-      final measurementsUrl = Uri.parse(
-        '$_baseUrl?base=balises&r=releves_meteo&key=$apiKey',
-      );
-
-      final measurementsResponse = await http.get(
-        measurementsUrl,
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'TheParaglidingApp/1.0',
-        },
-      ).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          LoggingService.structured('FFVL_TIMEOUT', {
-            'url': 'measurements',
-            'duration_ms': stopwatch.elapsedMilliseconds,
-            'timeout_seconds': 30,
-          });
-          return http.Response('{"error": "Request timeout"}', 408);
-        },
-      );
-
-      // Parse measurements response - it's a List not a Map
-      Map<String, Map<String, dynamic>> measurementsMap = {};
-      if (measurementsResponse.statusCode == 200) {
-        final measurementsList = jsonDecode(measurementsResponse.body);
-        if (measurementsList is List) {
-          for (final measurement in measurementsList) {
-            if (measurement is Map<String, dynamic>) {
-              // Note: measurements API uses 'idbalise' (lowercase), not 'idBalise'
-              final id = measurement['idbalise']?.toString();
-              if (id != null) {
-                measurementsMap[id] = measurement;
-              }
-            }
-          }
-        }
-      }
-
-      stopwatch.stop();
-
-      LoggingService.structured('FFVL_MEASUREMENTS_PARSED', {
-        'beacon_count': beaconMap.length,
-        'measurement_count': measurementsMap.length,
-      });
-
-      // Parse and combine data
       final parseStopwatch = Stopwatch()..start();
-      final List<WeatherStation> stations = [];
-      int maintenanceCount = 0; // Track maintenance beacons
-
-      for (final beaconData in beaconMap.values) {
-        try {
-          // Check for maintenance before parsing
-          final inMaintenance = beaconData['en_maintenance'] == '1';
-          if (inMaintenance) {
-            maintenanceCount++;
-            continue;
-          }
-
-          // Get fresh measurements if available
-          Map<String, dynamic>? freshMeasurement;
-          if (measurementsMap.isNotEmpty) {
-            final beaconId = beaconData['idBalise']?.toString();
-            freshMeasurement = beaconId == null ? null : measurementsMap[beaconId];
-          }
-
-          final station = _parseFfvlBeacon(beaconData, freshMeasurement);
-          if (station != null) {
-            stations.add(station);
-          }
-        } catch (e) {
-          LoggingService.error('Failed to parse FFVL beacon', e);
-        }
-      }
-
+      final stations = _buildStations(parsedBeacons.active, parsedReadings.winds);
       parseStopwatch.stop();
 
       LoggingService.performance(
@@ -368,204 +299,300 @@ class FfvlWeatherProvider implements WeatherStationProvider {
         '${stations.length} beacons parsed',
       );
 
-      // Calculate bounding box from fetched stations
-      final cachedBounds = _calculateBoundsFromStations(stations);
-
-      // Cache the results with current timestamps and calculated bbox
       final now = DateTime.now();
       _globalCache = _GlobalCacheEntry(
+        beacons: parsedBeacons.active,
         stations: stations,
         beaconListTimestamp: now,
-        measurementsTimestamp: now,
-        bounds: cachedBounds,
+        measurementsTimestamp: readingsJson == null
+            ? DateTime.fromMillisecondsSinceEpoch(0)
+            : now,
+        bounds: _calculateBoundsFromStations(stations),
       );
 
-      LoggingService.structured('FFVL_BBOX_CALCULATED', {
-        'station_count': stations.length,
-        'bounds': '${cachedBounds.south},${cachedBounds.west},${cachedBounds.north},${cachedBounds.east}',
-        'bounds_width_degrees': (cachedBounds.east - cachedBounds.west).toStringAsFixed(2),
-        'bounds_height_degrees': (cachedBounds.north - cachedBounds.south).toStringAsFixed(2),
-      });
+      final joined = parsedBeacons.active
+          .where((beacon) => parsedReadings.winds.containsKey(beacon.id))
+          .length;
 
-      LoggingService.structured('FFVL_BEACONS_SUCCESS', {
-        'beacon_count': stations.length,
-        'beacons_with_data': stations.where((s) => s.windData != null).length,
-        'maintenance_beacons_skipped': maintenanceCount,
-        'network_ms': stopwatch.elapsedMilliseconds - parseStopwatch.elapsedMilliseconds,
-        'parse_ms': parseStopwatch.elapsedMilliseconds,
-        'total_ms': stopwatch.elapsedMilliseconds,
+      LoggingService.structured('FFVL_CATALOGUE_LOADED', {
+        'raw': parsedBeacons.active.length +
+            parsedBeacons.maintenance +
+            parsedBeacons.invalid,
+        'active': parsedBeacons.active.length,
+        'maintenance': parsedBeacons.maintenance,
+        'invalid': parsedBeacons.invalid,
+        'readings': parsedReadings.winds.length,
+        'joined': joined,
+        'skipped': parsedReadings.skipped,
+        'orphans': parsedReadings.winds.length - joined,
+        'ms': stopwatch.elapsedMilliseconds,
       });
-
-      return stations;
     } catch (e, stackTrace) {
       LoggingService.structured('FFVL_REQUEST_FAILED', {
         'error_type': e.runtimeType.toString(),
         'error_message': e.toString(),
       });
-      LoggingService.error('Failed to fetch FFVL beacons', e, stackTrace);
-      return [];
+      LoggingService.error('Failed to load FFVL beacons', e, stackTrace);
     }
   }
 
-  /// Refresh measurements while keeping beacon list cache
-  /// Re-fetches measurements but keeps the beacon list
-  Future<void> _refreshMeasurements() async {
+  Future<void> _refreshReadings() async {
+    final cache = _globalCache;
+    if (cache == null) return;
+
+    final stopwatch = Stopwatch()..start();
     try {
-      // We need to re-fetch both endpoints since the beacon list API
-      // also contains embedded measurements that we can use as fallback
-      final beacons = await _fetchAllBeacons();
-      if (beacons.isNotEmpty && _globalCache != null) {
-        // Recalculate bbox from refreshed stations
-        final refreshedBounds = _calculateBoundsFromStations(beacons);
+      final readingsJson = await _fetchJson(_relevesUrl, 'releves');
+      if (readingsJson == null) return; // keep the old stations
 
-        // Update only measurements timestamp, keep original beacon list timestamp
-        _globalCache = _GlobalCacheEntry(
-          stations: beacons,
-          beaconListTimestamp: _globalCache!.beaconListTimestamp,
-          measurementsTimestamp: DateTime.now(),
-          bounds: refreshedBounds,
-        );
+      final parsed = _parseReadings(readingsJson, now: DateTime.now());
+      final now = DateTime.now();
 
-        LoggingService.structured('FFVL_MEASUREMENTS_REFRESHED', {
-          'beacon_count': beacons.length,
-          'beacons_with_data': beacons.where((s) => s.windData != null).length,
-        });
-      }
+      _globalCache = _GlobalCacheEntry(
+        beacons: cache.beacons,
+        stations: _buildStations(cache.beacons, parsed.winds),
+        beaconListTimestamp: cache.beaconListTimestamp,
+        measurementsTimestamp: now,
+        bounds: cache.bounds,
+      );
+
+      final joined = cache.beacons
+          .where((beacon) => parsed.winds.containsKey(beacon.id))
+          .length;
+
+      LoggingService.structured('FFVL_READINGS_REFRESHED', {
+        'readings': parsed.winds.length,
+        'joined': joined,
+        'skipped': parsed.skipped,
+        'orphans': parsed.winds.length - joined,
+        'ms': stopwatch.elapsedMilliseconds,
+      });
     } catch (e, stackTrace) {
-      LoggingService.error('Failed to refresh FFVL measurements', e, stackTrace);
+      LoggingService.structured('FFVL_READINGS_REFRESH_FAILED', {
+        'error_type': e.runtimeType.toString(),
+        'error_message': e.toString(),
+      });
+      LoggingService.error('Failed to refresh FFVL readings', e, stackTrace);
     }
   }
 
-  /// Parse a FFVL beacon JSON object into a WeatherStation
-  WeatherStation? _parseFfvlBeacon(
-    Map<String, dynamic> beaconData,
-    Map<String, dynamic>? measurements,
-  ) {
+  /// Fetch one published file. Returns null on any failure, after logging it.
+  Future<dynamic> _fetchJson(String url, String resource) async {
+    final stopwatch = Stopwatch()..start();
+    LoggingService.structured('FFVL_REQUEST_START', {
+      'resource': resource,
+      'url': url,
+    });
+
+    final response = await _httpClient.get(
+      Uri.parse(url),
+      headers: const {
+        'Accept': 'application/json',
+        'User-Agent': 'TheParaglidingApp/1.0',
+      },
+    ).timeout(
+      _requestTimeout,
+      onTimeout: () {
+        stopwatch.stop();
+        LoggingService.structured('FFVL_TIMEOUT', {
+          'resource': resource,
+          'duration_ms': stopwatch.elapsedMilliseconds,
+          'timeout_seconds': _requestTimeout.inSeconds,
+        });
+        return http.Response('{"error": "Request timeout"}', 408);
+      },
+    );
+    stopwatch.stop();
+
+    if (response.statusCode == 404 || response.statusCode == 410) {
+      LoggingService.structured('FFVL_RESOURCE_GONE', {
+        'resource': resource,
+        'status': response.statusCode,
+        'url': url,
+      });
+      LoggingService.warning(
+        'FFVL $resource resource is gone. Check the dataset page and the '
+        'FFVL Dev Discord for a new resource id.',
+      );
+      return null;
+    }
+
+    if (response.statusCode != 200) {
+      LoggingService.structured('FFVL_HTTP_ERROR', {
+        'resource': resource,
+        'status_code': response.statusCode,
+        'duration_ms': stopwatch.elapsedMilliseconds,
+      });
+      return null;
+    }
+
     try {
-      final id = beaconData['idBalise']?.toString();
-      final name = beaconData['nom'] as String?;
-      final latitude = _parseDouble(beaconData['latitude']);
-      final longitude = _parseDouble(beaconData['longitude']);
-      final altitude = _parseDouble(beaconData['altitude']);
+      return jsonDecode(response.body);
+    } catch (e) {
+      LoggingService.structured('FFVL_RESPONSE_INVALID', {
+        'resource': resource,
+        'error_type': e.runtimeType.toString(),
+      });
+      return null;
+    }
+  }
 
-      if (id == null || latitude == null || longitude == null) {
-        return null; // Skip beacons without required fields
+  _ParsedBeacons _parseBeacons(dynamic decoded) {
+    if (decoded is! List) {
+      return const _ParsedBeacons(<_Beacon>[], 0, 1);
+    }
+
+    final active = <_Beacon>[];
+    var maintenance = 0;
+    var invalid = 0;
+
+    for (final raw in decoded) {
+      if (raw is! Map<String, dynamic>) {
+        invalid++;
+        continue;
       }
+      if (_isMaintenance(raw)) {
+        maintenance++;
+        continue;
+      }
+      final beacon = _parseBeacon(raw);
+      if (beacon == null) {
+        invalid++;
+        continue;
+      }
+      active.add(beacon);
+    }
 
-      // Check if beacon is in maintenance
-      final inMaintenance = beaconData['en_maintenance'] == '1';
-      if (inMaintenance) {
-        LoggingService.debug('Skipping beacon in maintenance: $name');
+    return _ParsedBeacons(active, maintenance, invalid);
+  }
+
+  bool _isMaintenance(Map<String, dynamic> json) {
+    final value = json['en_maintenance'];
+    return value == 1 || value == '1';
+  }
+
+  _Beacon? _parseBeacon(Map<String, dynamic> json) {
+    try {
+      final id = json['idBalise']?.toString();
+      final latitude = _parseDouble(json['latitude']);
+      final longitude = _parseDouble(json['longitude']);
+
+      if (id == null || id.isEmpty || latitude == null || longitude == null) {
         return null;
       }
 
-      // Parse wind data - prefer fresh measurements over embedded data
-      WindData? windData;
-
-      if (measurements != null) {
-        // Use fresh measurement data
-        final windSpeedAvg = _parseDouble(measurements['vitesseVentMoy']);
-        final windSpeedMax = _parseDouble(measurements['vitesseVentMax']);
-        final windDirection = _parseDouble(measurements['directVentMoy']);
-        final measurementDate = measurements['date'] as String?;
-
-        if (windSpeedAvg != null && windDirection != null) {
-          // Parse timestamp safely with fallback to current time
-          DateTime timestamp = DateTime.now();
-          if (measurementDate != null) {
-            final parsed = DateTime.tryParse(measurementDate);
-            if (parsed != null) {
-              timestamp = parsed;
-            } else {
-              LoggingService.warning('Invalid measurement date format: $measurementDate');
-            }
-          }
-
-          windData = WindData(
-            speedKmh: windSpeedAvg,
-            gustsKmh: windSpeedMax,
-            directionDegrees: windDirection,
-            timestamp: timestamp,
-          );
-        }
-      } else {
-        // Fallback to embedded data in beacon list
-        final lastWindSpeed = _parseDouble(beaconData['last_wind_speed_avg']);
-        final lastWindGust = _parseDouble(beaconData['last_wind_speed_max']);
-        final lastWindDir = _parseDouble(beaconData['last_wind_dir']);
-        final lastDataTimestamp = beaconData['last_data_timestamp'] as String?;
-
-        // Check if data is fresh (less than 1 hour old)
-        if (lastDataTimestamp != null && lastWindSpeed != null && lastWindDir != null) {
-          final dataTime = DateTime.tryParse(lastDataTimestamp);
-          if (dataTime != null) {
-            final dataAge = DateTime.now().difference(dataTime);
-
-            if (dataAge.inHours < 1) {
-              windData = WindData(
-                speedKmh: lastWindSpeed,
-                gustsKmh: lastWindGust,
-                directionDegrees: lastWindDir,
-                timestamp: dataTime,
-              );
-            }
-          } else {
-            LoggingService.warning('Invalid beacon timestamp format: $lastDataTimestamp');
-          }
-        }
-      }
-
-      // Extract department/region info
-      final department = beaconData['departement'] as String?;
-      final stationType = beaconData['station_type'] as String? ?? 'FFVL';
-
-      // Smart conditional display based on available metadata
-      String? displayName;
-      if (name != null && department != null) {
-        final deptName = _getDepartmentName(department);
-        if (deptName.isNotEmpty && !deptName.startsWith('Dept')) {
-          // Full department name available
-          displayName = '$name ($deptName)';
-        } else if (department.isNotEmpty) {
-          // Fallback to code if name not found
-          displayName = '$name (Dept $department)';
-        } else {
-          // No department info
-          displayName = name;
-        }
-      } else {
-        displayName = name;
-      }
-
-      // Smart observation type based on station_type
-      String observationType;
-      if (stationType == 'PIOUPIOU') {
-        observationType = 'FFVL/Pioupiou';
-      } else if (stationType == 'OPENWINDMAP') {
-        observationType = 'FFVL/OpenWindMap';
-      } else if (stationType == 'FFVL') {
-        observationType = 'FFVL';
-      } else {
-        observationType = 'FFVL ($stationType)';
-      }
-
-      // Extract URL from beacon data (use main beacon page)
-      final beaconUrl = beaconData['url'] as String?;
-
-      return WeatherStation(
-        id: 'ffvl_$id',
-        source: WeatherStationSource.ffvl,
-        name: displayName,
+      return _Beacon(
+        id: id,
+        name: json['nom'] as String?,
         latitude: latitude,
         longitude: longitude,
-        elevation: altitude,
-        windData: windData,
-        observationType: observationType,
-        dataUrl: beaconUrl ?? 'https://www.balisemeteo.com/balise.php?idBalise=$id',
+        altitude: _parseDouble(json['altitude']),
+        department: json['departement'] as String?,
+        stationType: json['station_type'] as String? ?? 'FFVL',
       );
     } catch (e) {
       LoggingService.error('Error parsing FFVL beacon', e);
       return null;
+    }
+  }
+
+  _ParsedReadings _parseReadings(dynamic decoded, {required DateTime now}) {
+    if (decoded is! List) {
+      return const _ParsedReadings(<String, WindData>{}, 0);
+    }
+
+    final winds = <String, WindData>{};
+    var skipped = 0;
+
+    for (final raw in decoded) {
+      if (raw is! Map<String, dynamic>) {
+        skipped++;
+        continue;
+      }
+      final id = raw['idbalise']?.toString();
+      if (id == null || id.isEmpty) {
+        skipped++;
+        continue;
+      }
+      final reading = _parseReading(raw, now: now);
+      if (reading == null) {
+        skipped++;
+        continue;
+      }
+      winds[id] = reading;
+    }
+
+    return _ParsedReadings(winds, skipped);
+  }
+
+  WindData? _parseReading(
+    Map<String, dynamic> json, {
+    required DateTime now,
+  }) {
+    final speed = _parseDouble(json['vitesseVentMoy']);
+    final direction = _parseDouble(json['directVentMoy']);
+    final rawDate = json['date'];
+    final date = rawDate is String ? DateTime.tryParse(rawDate)?.toUtc() : null;
+
+    if (speed == null || direction == null || date == null) {
+      return null;
+    }
+
+    // releves.json keeps the last reading of an offline beacon. Do not show a
+    // month-old reading as today's wind.
+    if (now.difference(date) > MapConstants.ffvlMeasurementMaxAge) {
+      return null;
+    }
+
+    return WindData(
+      speedKmh: speed,
+      gustsKmh: _parseDouble(json['vitesseVentMax']),
+      directionDegrees: direction,
+      timestamp: date,
+    );
+  }
+
+  List<WeatherStation> _buildStations(
+    List<_Beacon> beacons,
+    Map<String, WindData> winds,
+  ) {
+    return beacons.map((beacon) {
+      return WeatherStation(
+        id: 'ffvl_${beacon.id}',
+        source: WeatherStationSource.ffvl,
+        name: _displayName(beacon),
+        latitude: beacon.latitude,
+        longitude: beacon.longitude,
+        elevation: beacon.altitude,
+        windData: winds[beacon.id],
+        observationType: _observationType(beacon.stationType),
+        dataUrl: '$_stationUrl${beacon.id}',
+      );
+    }).toList();
+  }
+
+  static String? _displayName(_Beacon beacon) {
+    final name = beacon.name;
+    if (name == null) return null;
+
+    final department = beacon.department;
+    if (department == null || department.isEmpty) return name;
+
+    final departmentName = _getDepartmentName(department);
+    if (departmentName.isNotEmpty && !departmentName.startsWith('Dept')) {
+      return '$name ($departmentName)';
+    }
+    return '$name (Dept $department)';
+  }
+
+  static String _observationType(String stationType) {
+    switch (stationType) {
+      case 'OPENWINDMAP':
+        return 'FFVL/OpenWindMap';
+      case 'FFVL':
+        return 'FFVL';
+      default:
+        return 'FFVL ($stationType)';
     }
   }
 
@@ -703,7 +730,7 @@ class FfvlWeatherProvider implements WeatherStationProvider {
     return 'Dept $code';
   }
 
-  /// Helper to parse various numeric formats from FFVL API
+  /// Helper to parse various numeric formats from the files
   double? _parseDouble(dynamic value) {
     if (value == null) return null;
     if (value is num) return value.toDouble();
@@ -764,15 +791,54 @@ class FfvlWeatherProvider implements WeatherStationProvider {
   }
 }
 
-/// Global cache entry with dual timestamp tracking
-/// Allows separate TTL for beacon list (24hr) and measurements (5min)
+/// Parsed beacon metadata, kept so a reading refresh does not re-download or
+/// re-parse `balises.json`.
+class _Beacon {
+  final String id;
+  final String? name;
+  final double latitude;
+  final double longitude;
+  final double? altitude;
+  final String? department;
+  final String stationType;
+
+  const _Beacon({
+    required this.id,
+    required this.name,
+    required this.latitude,
+    required this.longitude,
+    required this.altitude,
+    required this.department,
+    required this.stationType,
+  });
+}
+
+class _ParsedBeacons {
+  final List<_Beacon> active;
+  final int maintenance;
+  final int invalid;
+
+  const _ParsedBeacons(this.active, this.maintenance, this.invalid);
+}
+
+class _ParsedReadings {
+  final Map<String, WindData> winds;
+  final int skipped;
+
+  const _ParsedReadings(this.winds, this.skipped);
+}
+
+/// Global cache entry with dual timestamp tracking.
+/// Allows separate TTL for the beacon list (24hr) and readings (5min).
 class _GlobalCacheEntry {
+  final List<_Beacon> beacons;
   final List<WeatherStation> stations;
   final DateTime beaconListTimestamp;
   final DateTime measurementsTimestamp;
   final LatLngBounds bounds; // Calculated bbox from station locations
 
   _GlobalCacheEntry({
+    required this.beacons,
     required this.stations,
     required this.beaconListTimestamp,
     required this.measurementsTimestamp,

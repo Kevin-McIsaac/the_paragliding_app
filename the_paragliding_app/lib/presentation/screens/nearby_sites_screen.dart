@@ -169,7 +169,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   bool _metarEnabled = true; // METAR provider enabled (default: true)
   bool _nwsEnabled = true; // NWS provider enabled (default: true, free/no API key)
   bool _pioupiouEnabled = true; // Pioupiou provider enabled (default: true, free/no API key)
-  bool _ffvlEnabled = true; // FFVL provider enabled (default: true, has API key)
+  bool _ffvlEnabled = true; // FFVL provider enabled (default: true)
   bool _bomEnabled = true; // BOM provider enabled (default: true, free/no API key)
   bool _wundergroundPwsEnabled = true; // WU PWS provider enabled (default: true, has API key)
   bool _holfuyEnabled = true; // Holfuy provider enabled (default: true, no API key; wind loads on tap)
