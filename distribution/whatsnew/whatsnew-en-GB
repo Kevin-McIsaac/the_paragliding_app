@@ -1,5 +1,7 @@
-• Search on the nearby sites screen is responsive again: results appear
-  as you type without the map stalling on every keystroke
-• Weather Underground stations are temporarily unavailable while the
-  shared API key is replaced; the other wind sources still work
-• Fixed the tap highlight on search results
+• FFVL weather beacons now use the federation's open data and refresh
+  every 5 minutes.
+• Stale FFVL readings, older than 2 hours, are no longer shown as
+  current wind.
+• Pioupiou and OpenWindMap readings now refresh every 5 minutes
+  instead of 20.
+• FFVL beacon links open the correct beacon page.
