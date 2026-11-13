@@ -352,7 +352,7 @@ class _AboutScreenState extends State<AboutScreen> {
                     ),
                     // OpenWindMap
                     AppAttributionLink.compact(
-                      url: 'https://www.openwindmap.org',
+                      url: 'https://openwindmap.org',
                       icon: Icons.air,
                       text: 'OpenWindMap Contributors',
                     ),

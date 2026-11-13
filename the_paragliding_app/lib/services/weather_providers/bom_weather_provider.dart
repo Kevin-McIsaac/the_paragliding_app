@@ -134,7 +134,7 @@ class BomWeatherProvider implements WeatherStationProvider {
   ) async {
     if (stations.isEmpty) return {};
 
-    // BOM stations already have wind data embedded (like Pioupiou/FFVL)
+    // BOM stations already have wind data embedded (like OpenWindMap/FFVL)
     // Just extract it and map by station key
     final Map<String, WindData> result = {};
     for (final station in stations) {

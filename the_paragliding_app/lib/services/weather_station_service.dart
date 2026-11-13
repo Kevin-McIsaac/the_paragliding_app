@@ -421,8 +421,7 @@ class WeatherStationService {
       final enabled = <WeatherStationProvider>[];
 
       for (final source in WeatherStationProviderRegistry.getAllSources()) {
-        final key = 'weather_provider_${source.name}_enabled';
-        final isEnabled = prefs.getBool(key) ?? true; // Default enabled
+        final isEnabled = isProviderEnabledFromPrefs(prefs, source);
 
         if (isEnabled) {
           final provider = WeatherStationProviderRegistry.getProvider(source);
@@ -450,14 +449,61 @@ class WeatherStationService {
     }
   }
 
+  /// Preference key written before the Pioupiou source became OpenWindMap.
+  static const String legacyPioupiouEnabledKey =
+      'weather_provider_pioupiou_enabled';
+
   /// Get provider enabled state
   static Future<bool> isProviderEnabled(WeatherStationSource source) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool('weather_provider_${source.name}_enabled') ?? true;
+      return isProviderEnabledFromPrefs(prefs, source);
     } catch (e) {
       LoggingService.error('Failed to get provider enabled state', e);
       return true; // Fallback - enable by default
+    }
+  }
+
+  /// Whether [source] is enabled, read from [prefs].
+  ///
+  /// The OpenWindMap source falls back to the old Pioupiou key, so a user who
+  /// disabled that layer before the rename keeps it disabled even if the
+  /// startup migration did not run.
+  static bool isProviderEnabledFromPrefs(
+    SharedPreferences prefs,
+    WeatherStationSource source,
+  ) {
+    final key = 'weather_provider_${source.name}_enabled';
+    final value = prefs.getBool(key);
+    if (value != null) return value;
+    if (source == WeatherStationSource.openWindMap) {
+      return prefs.getBool(legacyPioupiouEnabledKey) ?? true;
+    }
+    return true;
+  }
+
+  /// Copy the pre-rename Pioupiou enabled flag to the OpenWindMap key.
+  ///
+  /// Runs at startup before any screen reads provider settings. It is a no-op
+  /// when the new key exists or the old key was never written. The old key is
+  /// kept so a downgrade still reads its own setting.
+  static Future<void> migrateLegacyProviderPreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final newKey =
+          'weather_provider_${WeatherStationSource.openWindMap.name}_enabled';
+      if (prefs.containsKey(newKey)) return;
+      final legacy = prefs.getBool(legacyPioupiouEnabledKey);
+      if (legacy == null) return;
+      await prefs.setBool(newKey, legacy);
+      LoggingService.structured('PREFS_MIGRATION', {
+        'key': newKey,
+        'legacy_key': legacyPioupiouEnabledKey,
+        'legacy_value': legacy,
+      });
+    } catch (e) {
+      LoggingService.error(
+          'Failed to migrate weather provider preferences', e);
     }
   }
 

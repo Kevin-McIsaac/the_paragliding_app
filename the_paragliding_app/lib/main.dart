@@ -165,6 +165,10 @@ class _AppInitializerState extends State<AppInitializer> {
       LoggingService.performance(
           'Startup: tables', tablesTimer.elapsed, 'PGE tables ready');
 
+      // Carry the old Pioupiou enabled flag over to the OpenWindMap source
+      // before the Sites tab reads provider settings.
+      await WeatherStationService.migrateLegacyProviderPreferences();
+
       // Seed dev fixtures when SEED_IGC_DIR is defined (no-op in release
       // builds). Runs here rather than in main() so the loading screen is
       // already on screen while flights import.
@@ -172,7 +176,7 @@ class _AppInitializerState extends State<AppInitializer> {
         _status.value = 'Importing flight ${done + 1} of $total';
       });
 
-      // Fire-and-forget: warm the global weather-station caches (Pioupiou,
+      // Fire-and-forget: warm the global weather-station caches (OpenWindMap,
       // FFVL) so the Sites tab has data on first open instead of ~15s later.
       // Failures are logged and survived - fetchStations refetches on demand.
       unawaited(_warmWeatherCaches());
