@@ -570,15 +570,15 @@ class _WeatherStationDialogState extends State<_WeatherStationDialog> {
   Widget _buildAttribution(WeatherStation station) {
     final provider = WeatherStationProviderRegistry.getProvider(station.source);
 
-    // For Aviation Weather Center, Pioupiou, and FFVL stations, link to specific station observation page
+    // METAR links to the decoded report. Providers that publish a per-station
+    // page supply it through `dataUrl`.
     final String url;
     if (station.source == WeatherStationSource.awcMetar) {
       url = 'https://aviationweather.gov/data/metar/?decoded=1&ids=${station.id}';
-    } else if (station.source == WeatherStationSource.pioupiou) {
-      url = 'https://www.openwindmap.org/windbird-${station.id}';
     } else if ((station.source == WeatherStationSource.ffvl ||
                 station.source == WeatherStationSource.weatherUndergroundPws ||
-                station.source == WeatherStationSource.holfuy) &&
+                station.source == WeatherStationSource.holfuy ||
+                station.source == WeatherStationSource.openWindMap) &&
                station.dataUrl != null) {
       url = station.dataUrl!;
     } else {

@@ -11,7 +11,7 @@ The Paragliding App integrates with multiple weather station providers to displa
 | Aviation Weather Center | Global airports | No | ✅ Yes | Direct bbox query | Varies (1-60min) |
 | Bureau of Meteorology (BOM) | Australia | No | ❌ No | State-based fetch | 10 minutes |
 | FFVL Beacons | France | No | ❌ No | Global fetch-all (two files) | 5 minutes |
-| Pioupiou (OpenWindMap) | Global | No | ❌ No | Global fetch-all | 5 minutes |
+| OpenWindMap | Global | No | ❌ No | Global fetch-all | 5 minutes |
 | NWS Observations | US only | No | ❌ No | Grid-based lookup | 10 minutes |
 
 ## Bounding Box Support
@@ -132,18 +132,18 @@ is served with `Cache-Control: max-age=2592000`.
 - Drops readings older than 2 hours
 - French department name mapping for display
 - Multiple station types: ADISON, OPENWINDMAP, HOLFUY, SENCROP, CTIC and others
-- OpenWindMap beacons have no readings here; the Pioupiou layer supplies them
+- OpenWindMap beacons have no readings here; the OpenWindMap layer supplies them
 
 **Error Handling**:
 - A 404 or 410 from a resource logs `FFVL_RESOURCE_GONE` and keeps the last cache
 - A failed readings refresh keeps the previous stations
 
-#### 3. Pioupiou (OpenWindMap) - Global Fetch-All
+#### 3. OpenWindMap - Global Fetch-All
 
-**Implementation**: `pioupiou_weather_provider.dart:199`
+**Implementation**: `openwindmap_weather_provider.dart`
 
 **Strategy**:
-- Fetches ALL stations globally (~1000 stations)
+- Fetches ALL stations globally (~760 stations)
 - Single API endpoint with embedded measurements
 - Calculates bbox from returned stations
 - Filters cached data to bbox in-memory
@@ -171,8 +171,7 @@ final filtered = stations.where((station) {
 ```
 
 **API Endpoint**:
-- Base URL: `http://api.pioupiou.fr/v1/live-with-meta/all`
-- Note: HTTP only (no HTTPS support)
+- Base URL: `https://api.openwindmap.org/v1/live-with-meta/all`
 
 **Caching Strategy**:
 - Station list: 24 hours (locations don't change)
@@ -180,12 +179,12 @@ final filtered = stations.where((station) {
 - Global cache with calculated bbox for overlap detection
 
 **Performance**:
-- Initial fetch: ~1000 stations
+- Initial fetch: ~760 stations
 - Subsequent views: Instant (in-memory filter)
 - Smart overlap detection prevents unnecessary API calls
 
 **Special Features**:
-- Only returns online stations (`status.state == 'on'`)
+- Shows every station. An offline station appears without wind.
 - Wind data represents 4-minute averages before timestamp
 - Wind speeds already in km/h (no conversion needed)
 
@@ -290,14 +289,14 @@ class _CacheEntry {
 | Aviation Weather Center | 1 hour | 1 hour |
 | BOM | 24 hours | 10 minutes |
 | FFVL | 24 hours | 5 minutes |
-| Pioupiou | 24 hours | 5 minutes |
+| OpenWindMap | 24 hours | 5 minutes |
 | NWS | 24 hours | 10 minutes |
 
 ## Performance Optimizations
 
 ### 1. Early Exit for Non-Overlapping Regions
 
-Global providers (FFVL, Pioupiou) calculate bbox from cached stations and exit early if view doesn't overlap:
+Global providers (FFVL, OpenWindMap) calculate bbox from cached stations and exit early if view doesn't overlap:
 
 ```dart
 // Check if cached bbox overlaps with requested bounds
@@ -371,7 +370,7 @@ class WindData {
 | Aviation Weather Center | Knots | × 1.852 → km/h |
 | BOM | km/h | No conversion |
 | FFVL | km/h | No conversion |
-| Pioupiou | km/h | No conversion |
+| OpenWindMap | km/h | No conversion |
 | NWS | km/h | No conversion |
 
 ## API Authentication
@@ -381,7 +380,7 @@ class WindData {
 | Aviation Weather Center | No | N/A |
 | BOM | No | N/A |
 | FFVL | No | N/A |
-| Pioupiou | No | N/A |
+| OpenWindMap | No | N/A |
 | NWS | No | N/A |
 
 ## Error Handling
@@ -394,7 +393,7 @@ Providers handle requests outside their coverage area gracefully:
 **BOM**: Returns empty list if no states overlap
 **FFVL**: Early exit if the cached bbox does not overlap. A 404 or 410 for a
 resource keeps the last cache.
-**Pioupiou**: Early exit if cached bbox doesn't overlap
+**OpenWindMap**: Early exit if cached bbox doesn't overlap
 **NWS**: Returns 404 from `/points` endpoint, cached as empty
 
 ### Timeout Handling
@@ -420,7 +419,7 @@ final response = await http.get(url).timeout(
 | Aviation Weather Center | `lib/services/weather_providers/aviation_weather_center_provider.dart` |
 | BOM | `lib/services/weather_providers/bom_weather_provider.dart` |
 | FFVL | `lib/services/weather_providers/ffvl_weather_provider.dart` |
-| Pioupiou | `lib/services/weather_providers/pioupiou_weather_provider.dart` |
+| OpenWindMap | `lib/services/weather_providers/openwindmap_weather_provider.dart` |
 | NWS | `lib/services/weather_providers/nws_weather_provider.dart` |
 | Base Interface | `lib/services/weather_providers/weather_station_provider.dart` |
 | Registry | `lib/services/weather_providers/weather_station_provider_registry.dart` |
@@ -433,7 +432,7 @@ To add a new weather station provider:
 2. **Choose a caching strategy**:
    - **Has bbox API?** → Use Aviation Weather Center pattern
    - **Regional API?** → Use BOM state-based pattern
-   - **Small global dataset?** → Use FFVL/Pioupiou fetch-all pattern
+   - **Small global dataset?** → Use FFVL/OpenWindMap fetch-all pattern
    - **Grid/point lookup?** → Use NWS grid-based pattern
 3. **Handle coverage area** (return empty list outside coverage)
 4. **Normalize wind data** (convert to km/h if needed)

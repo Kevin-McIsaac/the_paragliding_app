@@ -493,7 +493,7 @@ class WeatherUndergroundPwsProvider implements WeatherStationProvider {
 
   @override
   Future<void> warmCache() async {
-    // Deliberately a no-op, unlike the other providers: Pioupiou/FFVL have
+    // Deliberately a no-op, unlike the other providers: OpenWindMap/FFVL have
     // global list endpoints where one warm call pre-loads everything, but WU
     // discovery is point-based - a world warm-up spends ~12 probe calls on
     // random grid points that may never be visited. Gap probing makes

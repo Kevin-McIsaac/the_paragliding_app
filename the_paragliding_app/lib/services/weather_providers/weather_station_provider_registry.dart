@@ -2,7 +2,7 @@ import '../../data/models/weather_station_source.dart';
 import 'weather_station_provider.dart';
 import 'aviation_weather_center_provider.dart';
 import 'nws_weather_provider.dart';
-import 'pioupiou_weather_provider.dart';
+import 'openwindmap_weather_provider.dart';
 import 'ffvl_weather_provider.dart';
 import 'bom_weather_provider.dart';
 import 'holfuy_weather_provider.dart';
@@ -17,7 +17,7 @@ class WeatherStationProviderRegistry {
   static final Map<WeatherStationSource, WeatherStationProvider> _providers = {
     WeatherStationSource.awcMetar: AviationWeatherCenterProvider.instance,
     WeatherStationSource.nws: NwsWeatherProvider.instance,
-    WeatherStationSource.pioupiou: PioupiouWeatherProvider.instance,
+    WeatherStationSource.openWindMap: OpenWindMapWeatherProvider.instance,
     WeatherStationSource.ffvl: FfvlWeatherProvider.instance,
     WeatherStationSource.bom: BomWeatherProvider.instance,
     WeatherStationSource.weatherUndergroundPws:

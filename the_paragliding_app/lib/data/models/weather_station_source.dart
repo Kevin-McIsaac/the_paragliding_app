@@ -12,9 +12,9 @@ enum WeatherStationSource {
   /// Real-time weather observations from non-airport stations
   nws,
 
-  /// Pioupiou/OpenWindMap from api.pioupiou.fr
+  /// OpenWindMap from api.openwindmap.org
   /// Community wind stations with global coverage
-  pioupiou,
+  openWindMap,
 
   /// FFVL (French Free Flight Federation) from data.gouv.fr
   /// Weather beacons in France

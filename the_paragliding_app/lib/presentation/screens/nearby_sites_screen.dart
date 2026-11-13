@@ -168,7 +168,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   bool _weatherStationsEnabled = true; // Controls weather station loading and display (default: enabled)
   bool _metarEnabled = true; // METAR provider enabled (default: true)
   bool _nwsEnabled = true; // NWS provider enabled (default: true, free/no API key)
-  bool _pioupiouEnabled = true; // Pioupiou provider enabled (default: true, free/no API key)
+  bool _openWindMapEnabled = true; // OpenWindMap provider enabled (default: true, free/no API key)
   bool _ffvlEnabled = true; // FFVL provider enabled (default: true)
   bool _bomEnabled = true; // BOM provider enabled (default: true, free/no API key)
   bool _wundergroundPwsEnabled = true; // WU PWS provider enabled (default: true, has API key)
@@ -439,7 +439,10 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       final weatherStationsEnabled = prefs.getBool(_weatherStationsEnabledKey) ?? true;
       final metarEnabled = prefs.getBool('weather_provider_${WeatherStationSource.awcMetar.name}_enabled') ?? true;
       final nwsEnabled = prefs.getBool('weather_provider_${WeatherStationSource.nws.name}_enabled') ?? true;
-      final pioupiouEnabled = prefs.getBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled') ?? true;
+      final openWindMapEnabled = WeatherStationService.isProviderEnabledFromPrefs(
+        prefs,
+        WeatherStationSource.openWindMap,
+      );
       final ffvlEnabled = prefs.getBool('weather_provider_${WeatherStationSource.ffvl.name}_enabled') ?? true;
       final bomEnabled = prefs.getBool('weather_provider_${WeatherStationSource.bom.name}_enabled') ?? true;
       // WU PWS is unused until a valid shared key returns (the old key was
@@ -458,7 +461,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           _weatherStationsEnabled = weatherStationsEnabled;
           _metarEnabled = metarEnabled;
           _nwsEnabled = nwsEnabled;
-          _pioupiouEnabled = pioupiouEnabled;
+          _openWindMapEnabled = openWindMapEnabled;
           _ffvlEnabled = ffvlEnabled;
           _bomEnabled = bomEnabled;
           _wundergroundPwsEnabled = wundergroundPwsEnabled;
@@ -1743,7 +1746,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           weatherStationsEnabled: _weatherStationsEnabled,
           metarEnabled: _metarEnabled,
           nwsEnabled: _nwsEnabled,
-          pioupiouEnabled: _pioupiouEnabled,
+          openWindMapEnabled: _openWindMapEnabled,
           ffvlEnabled: _ffvlEnabled,
           bomEnabled: _bomEnabled,
           wundergroundPwsEnabled: _wundergroundPwsEnabled,
@@ -1779,7 +1782,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   }
 
   /// Handle filter apply from dialog
-  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, bool weatherStationsEnabled, bool metarEnabled, bool nwsEnabled, bool pioupiouEnabled, bool ffvlEnabled, bool bomEnabled, bool wundergroundPwsEnabled, bool holfuyEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
+  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, bool weatherStationsEnabled, bool metarEnabled, bool nwsEnabled, bool openWindMapEnabled, bool ffvlEnabled, bool bomEnabled, bool wundergroundPwsEnabled, bool holfuyEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
     try {
       // Update filter states
       final previousSitesEnabled = _sitesEnabled;
@@ -1788,7 +1791,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       final previousWeatherStationsEnabled = _weatherStationsEnabled;
       final previousMetarEnabled = _metarEnabled;
       final previousNwsEnabled = _nwsEnabled;
-      final previousPioupiouEnabled = _pioupiouEnabled;
+      final previousOpenWindMapEnabled = _openWindMapEnabled;
       final previousFfvlEnabled = _ffvlEnabled;
       final previousBomEnabled = _bomEnabled;
       final previousWundergroundPwsEnabled = _wundergroundPwsEnabled;
@@ -1802,7 +1805,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         _weatherStationsEnabled = weatherStationsEnabled;
         _metarEnabled = metarEnabled;
         _nwsEnabled = nwsEnabled;
-        _pioupiouEnabled = pioupiouEnabled;
+        _openWindMapEnabled = openWindMapEnabled;
         _ffvlEnabled = ffvlEnabled;
         _bomEnabled = bomEnabled;
         _wundergroundPwsEnabled = wundergroundPwsEnabled &&
@@ -1821,7 +1824,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       await prefs.setBool(_weatherStationsEnabledKey, weatherStationsEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.awcMetar.name}_enabled', metarEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.nws.name}_enabled', nwsEnabled);
-      await prefs.setBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled', pioupiouEnabled);
+      await prefs.setBool('weather_provider_${WeatherStationSource.openWindMap.name}_enabled', openWindMapEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.ffvl.name}_enabled', ffvlEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.bom.name}_enabled', bomEnabled);
       if (!WeatherUndergroundPwsProvider.awaitingValidKey) {
@@ -1909,7 +1912,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           _fetchWeatherStations();
         }
         LoggingService.action('MapFilter', 'weather_stations_enabled', {'will_fetch': currentZoom >= MapConstants.minForecastZoom});
-      } else if (weatherStationsEnabled && (metarEnabled != previousMetarEnabled || nwsEnabled != previousNwsEnabled || pioupiouEnabled != previousPioupiouEnabled || ffvlEnabled != previousFfvlEnabled || bomEnabled != previousBomEnabled || wundergroundPwsEnabled != previousWundergroundPwsEnabled || holfuyEnabled != previousHolfuyEnabled)) {
+      } else if (weatherStationsEnabled && (metarEnabled != previousMetarEnabled || nwsEnabled != previousNwsEnabled || openWindMapEnabled != previousOpenWindMapEnabled || ffvlEnabled != previousFfvlEnabled || bomEnabled != previousBomEnabled || wundergroundPwsEnabled != previousWundergroundPwsEnabled || holfuyEnabled != previousHolfuyEnabled)) {
         // Weather station providers changed - refresh stations
         final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
         if (currentZoom >= MapConstants.minForecastZoom) {
@@ -1920,14 +1923,14 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         LoggingService.action('MapFilter', 'weather_providers_changed', {
           'metar_enabled': metarEnabled,
           'nws_enabled': nwsEnabled,
-          'pioupiou_enabled': pioupiouEnabled,
+          'openwindmap_enabled': openWindMapEnabled,
           'ffvl_enabled': ffvlEnabled,
           'bom_enabled': bomEnabled,
           'wunderground_pws_enabled': wundergroundPwsEnabled,
           'holfuy_enabled': holfuyEnabled,
           'metar_changed': metarEnabled != previousMetarEnabled,
           'nws_changed': nwsEnabled != previousNwsEnabled,
-          'pioupiou_changed': pioupiouEnabled != previousPioupiouEnabled,
+          'openwindmap_changed': openWindMapEnabled != previousOpenWindMapEnabled,
           'ffvl_changed': ffvlEnabled != previousFfvlEnabled,
           'bom_changed': bomEnabled != previousBomEnabled,
           'wunderground_pws_changed': wundergroundPwsEnabled != previousWundergroundPwsEnabled,
@@ -2363,7 +2366,7 @@ class _DraggableFilterDialog extends StatefulWidget {
   final bool weatherStationsEnabled;
   final bool metarEnabled;
   final bool nwsEnabled;
-  final bool pioupiouEnabled;
+  final bool openWindMapEnabled;
   final bool ffvlEnabled;
   final bool bomEnabled;
   final bool wundergroundPwsEnabled;
@@ -2379,7 +2382,7 @@ class _DraggableFilterDialog extends StatefulWidget {
     bool weatherStationsEnabled,
     bool metarEnabled,
     bool nwsEnabled,
-    bool pioupiouEnabled,
+    bool openWindMapEnabled,
     bool ffvlEnabled,
     bool bomEnabled,
     bool wundergroundPwsEnabled,
@@ -2397,7 +2400,7 @@ class _DraggableFilterDialog extends StatefulWidget {
     required this.weatherStationsEnabled,
     required this.metarEnabled,
     required this.nwsEnabled,
-    required this.pioupiouEnabled,
+    required this.openWindMapEnabled,
     required this.ffvlEnabled,
     required this.bomEnabled,
     required this.wundergroundPwsEnabled,
@@ -2445,7 +2448,7 @@ class _DraggableFilterDialogState extends State<_DraggableFilterDialog> {
                 weatherStationsEnabled: widget.weatherStationsEnabled,
                 metarEnabled: widget.metarEnabled,
                 nwsEnabled: widget.nwsEnabled,
-                pioupiouEnabled: widget.pioupiouEnabled,
+                openWindMapEnabled: widget.openWindMapEnabled,
                 ffvlEnabled: widget.ffvlEnabled,
                 bomEnabled: widget.bomEnabled,
                 wundergroundPwsEnabled: widget.wundergroundPwsEnabled,

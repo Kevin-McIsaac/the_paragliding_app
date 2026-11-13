@@ -456,7 +456,7 @@ static const int _maxCacheSize = 20;  // Limit memory usage
 - Cache miss on every pan/zoom to new area
 - Multiple API calls when exploring map
 
-#### Strategy 2: Global Caching (Pioupiou/OpenWindMap)
+#### Strategy 2: Global Caching (OpenWindMap)
 **Best for: Small networks (<5000 stations), global APIs**
 
 ```dart
@@ -468,11 +468,11 @@ class _GlobalCacheEntry {
 
   bool get stationListExpired =>
       DateTime.now().difference(stationListTimestamp) >
-      MapConstants.pioupiouStationListCacheTTL;  // 24 hours
+      MapConstants.openWindMapStationListCacheTTL;  // 24 hours
 
   bool get measurementsExpired =>
       DateTime.now().difference(measurementsTimestamp) >
-      MapConstants.pioupiouMeasurementsCacheTTL;  // 5 minutes
+      MapConstants.openWindMapMeasurementsCacheTTL;  // 5 minutes
 }
 
 _GlobalCacheEntry? _globalCache;
@@ -509,16 +509,16 @@ Future<List<WeatherStation>> fetchStations(LatLngBounds bounds) async {
 - Higher memory usage (~1000 stations = ~500KB)
 - Overkill for large networks (10000+ stations)
 
-#### Dual-TTL Pattern (Pioupiou)
+#### Dual-TTL Pattern (OpenWindMap)
 
 Separate TTLs for station locations vs. measurements:
 
 ```dart
 // Station locations: Rarely change (24hr TTL)
-static const Duration pioupiouStationListCacheTTL = Duration(hours: 24);
+static const Duration openWindMapStationListCacheTTL = Duration(hours: 24);
 
 // Wind measurements: Update frequently (5min TTL)
-static const Duration pioupiouMeasurementsCacheTTL = Duration(minutes: 5);
+static const Duration openWindMapMeasurementsCacheTTL = Duration(minutes: 5);
 
 Future<void> _refreshMeasurements() async {
   final stations = await _fetchAllStations();
@@ -539,20 +539,20 @@ Future<void> _refreshMeasurements() async {
 |----------|----------|--------------|-----------|--------------|----------------|
 | **Aviation Weather Center** | Bbox | ~10,000 stations | 30 min | Low (~100KB) | High (varies) |
 | **NWS** | Bbox + Grid | ~2,000 stations | Station: 24hr<br>Obs: 10min | Medium (~200KB) | Medium (1-2) |
-| **Pioupiou** | Global | ~1,000 stations | List: 24hr<br>Data: 5min | Medium (~500KB) | Medium (up to 12) |
+| **OpenWindMap** | Global | ~760 stations | List: 24hr<br>Data: 5min | Medium (~500KB) | Medium (up to 12) |
 
 ### Recommended TTLs by Data Type
 
 ```dart
 // Station metadata (lat/lon, name, ID) - Changes rarely
-Duration.hours(24)     // Global networks (Pioupiou)
+Duration.hours(24)     // Global networks (OpenWindMap)
 Duration.hours(1)      // Regional networks (NWS)
 Duration.minutes(30)   // Large networks (Aviation Weather Center)
 
 // Wind measurements - Updates frequently
 Duration.minutes(5)    // Real-time critical
 Duration.minutes(10)   // Standard updates (NWS)
-Duration.minutes(5)    // Fast updates (Pioupiou)
+Duration.minutes(5)    // Fast updates (OpenWindMap)
 Duration.minutes(30)   // Slow-updating networks (Aviation Weather Center)
 ```
 
@@ -667,27 +667,30 @@ curl -s "https://api.weather.gov/stations/KSNS/observations/latest" \
 
 **Note:** NWS API is US-only. International coordinates return 404.
 
-### Pioupiou/OpenWindMap
+### OpenWindMap
+
+The API is documented at <https://developers.openwindmap.org/api/live/>.
+The app fetches the global list because the API has no area query.
 
 Get all stations globally with latest measurements:
 ```bash
-curl -s "http://api.pioupiou.fr/v1/live-with-meta/all" \
+curl -s "https://api.openwindmap.org/v1/live-with-meta/all" \
   -H "Accept: application/json" \
   -H "User-Agent: TheParaglidingApp/1.0" | python3 -m json.tool
 ```
 
-Get metadata for a specific station:
+Get latest measurements with complete metadata for a specific station:
 ```bash
 # Station ID: 1701 (Tuniberg, Germany)
-curl -s "http://api.pioupiou.fr/v1/stations/1701" \
+curl -s "https://api.openwindmap.org/v1/live-with-meta/1701" \
   -H "Accept: application/json" \
   -H "User-Agent: TheParaglidingApp/1.0" | python3 -m json.tool
 ```
 
-Get latest measurement for a specific station:
+Get latest measurements for a specific station:
 ```bash
 # Station ID: 1701
-curl -s "http://api.pioupiou.fr/v1/live/1701" \
+curl -s "https://api.openwindmap.org/v1/live/1701" \
   -H "Accept: application/json" \
   -H "User-Agent: TheParaglidingApp/1.0" | python3 -m json.tool
 ```

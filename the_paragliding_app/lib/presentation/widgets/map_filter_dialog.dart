@@ -19,7 +19,7 @@ class MapFilterDialog extends StatefulWidget {
   final bool weatherStationsEnabled;
   final bool metarEnabled;
   final bool nwsEnabled;
-  final bool pioupiouEnabled;
+  final bool openWindMapEnabled;
   final bool ffvlEnabled;
   final bool bomEnabled;
   final bool wundergroundPwsEnabled;
@@ -35,7 +35,7 @@ class MapFilterDialog extends StatefulWidget {
     bool weatherStationsEnabled,
     bool metarEnabled,
     bool nwsEnabled,
-    bool pioupiouEnabled,
+    bool openWindMapEnabled,
     bool ffvlEnabled,
     bool bomEnabled,
     bool wundergroundPwsEnabled,
@@ -54,7 +54,7 @@ class MapFilterDialog extends StatefulWidget {
     required this.weatherStationsEnabled,
     required this.metarEnabled,
     required this.nwsEnabled,
-    required this.pioupiouEnabled,
+    required this.openWindMapEnabled,
     required this.ffvlEnabled,
     required this.bomEnabled,
     required this.wundergroundPwsEnabled,
@@ -77,7 +77,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
   late bool _weatherStationsEnabled;
   late bool _metarEnabled;
   late bool _nwsEnabled;
-  late bool _pioupiouEnabled;
+  late bool _openWindMapEnabled;
   late bool _ffvlEnabled;
   late bool _bomEnabled;
   late bool _wundergroundPwsEnabled;
@@ -124,7 +124,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     _weatherStationsEnabled = widget.weatherStationsEnabled;
     _metarEnabled = widget.metarEnabled;
     _nwsEnabled = widget.nwsEnabled;
-    _pioupiouEnabled = widget.pioupiouEnabled;
+    _openWindMapEnabled = widget.openWindMapEnabled;
     _ffvlEnabled = widget.ffvlEnabled;
     _bomEnabled = widget.bomEnabled;
     _wundergroundPwsEnabled = widget.wundergroundPwsEnabled;
@@ -505,13 +505,13 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 }) : null,
               ),
               const SizedBox(height: 2),
-              // Pioupiou provider (global)
+              // OpenWindMap provider (global)
               _buildProviderCheckbox(
-                value: _pioupiouEnabled,
-                label: 'Pioupiou (OpenWindMap)',
-                subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.pioupiou).description,
+                value: _openWindMapEnabled,
+                label: 'OpenWindMap',
+                subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.openWindMap).description,
                 onChanged: _weatherStationsEnabled ? (value) => setState(() {
-                  _pioupiouEnabled = value ?? true;
+                  _openWindMapEnabled = value ?? true;
                   _applyFiltersImmediately();
                 }) : null,
               ),
@@ -1156,7 +1156,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
       'clipping_enabled': _clippingEnabled,
     });
 
-    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _weatherStationsEnabled, _metarEnabled, _nwsEnabled, _pioupiouEnabled, _ffvlEnabled, _bomEnabled, _wundergroundPwsEnabled, _holfuyEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
+    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _weatherStationsEnabled, _metarEnabled, _nwsEnabled, _openWindMapEnabled, _ffvlEnabled, _bomEnabled, _wundergroundPwsEnabled, _holfuyEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
   }
 
   /// Build a provider checkbox widget

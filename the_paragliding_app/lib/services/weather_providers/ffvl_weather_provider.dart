@@ -24,7 +24,7 @@ import 'weather_station_provider.dart';
 /// uses the stable resource-id URLs instead.
 ///
 /// OpenWindMap beacons are in the list but have no readings in `releves.json`.
-/// The Pioupiou layer supplies those stations, and the service deduplicates
+/// The OpenWindMap layer supplies those stations, and the service deduplicates
 /// them within 150 m.
 ///
 /// Wind data is already in km/h (no conversion needed).
@@ -168,7 +168,7 @@ class FfvlWeatherProvider implements WeatherStationProvider {
   ) async {
     if (stations.isEmpty) return {};
 
-    // FFVL stations already have wind data embedded (like METAR and Pioupiou).
+    // FFVL stations already have wind data embedded (like METAR and OpenWindMap).
     // Just extract it and map by station key.
     final Map<String, WindData> result = {};
     for (final station in stations) {

@@ -114,7 +114,7 @@ binary.
 ## App integration (2026-09-05)
 
 `WeatherUndergroundPwsProvider` (lib/services/weather_providers/) is the sixth entry in
-`WeatherStationProviderRegistry`, alongside FFVL, BOM, METAR, NWS and Pioupiou.
+`WeatherStationProviderRegistry`, alongside FFVL, BOM, METAR, NWS and OpenWindMap.
 
 **Discovery uses gap probing**, because `v3/location/near` is point-based (≤10 nearest
 stations per call) while the map layer needs bbox coverage:

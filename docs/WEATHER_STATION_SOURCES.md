@@ -1,6 +1,6 @@
 # Weather Station Sources
 
-Last updated: 2026-11-10
+Last updated: 2026-11-11
 
 The app can show wind from seven station networks. This page is the short
 overview. The code-level detail is in
@@ -14,7 +14,7 @@ overview. The code-level detail is in
 | Aviation Weather Center | METAR airport reports | Airports worldwide | None | By viewport |
 | NWS Observations | US National Weather Service | US only | None | By viewport |
 | Holfuy | Launch-site wind stations | Worldwide | None | On tap |
-| Pioupiou (OpenWindMap) | Community wind stations | Global | None | One global list |
+| OpenWindMap | Community wind stations | Global | None | One global list |
 | FFVL Beacons | French paragliding beacons | France | None | One global list |
 | Bureau of Meteorology | Australian weather stations | Australia | None | By state |
 | WU PWS | Weather Underground personal stations | Global | None (paused) | Point probe, then readings |
@@ -27,10 +27,10 @@ overview. The code-level detail is in
   `api.weather.gov`.
 - **Holfuy** has about 1,500 stations, many at paragliding launches. The app
   reads one station only when you tap its marker.
-- **Pioupiou** has about 760 community stations. The app loads the whole list
-  once, then filters it to the viewport.
+- **OpenWindMap** has about 760 community stations. The app loads the whole
+  list once, then filters it to the viewport.
 - **FFVL** has about 540 active beacons in France. It needs no key. Its
-  OpenWindMap beacons get their wind from the Pioupiou layer.
+  OpenWindMap beacons get their wind from the OpenWindMap layer.
 - **BOM** covers Australia. The app fetches only the states that overlap the
   view.
 - **WU PWS** is the only layer with a shared key and point-based discovery.

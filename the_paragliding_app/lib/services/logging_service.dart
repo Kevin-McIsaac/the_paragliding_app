@@ -231,7 +231,7 @@ class LoggingService {
     // Weather parsing and station handling.
     'Station deduplication': 100,
     'FFVL parsing': 500,
-    'Pioupiou parsing': 500,
+    'OpenWindMap parsing': 500,
     'AWC_METAR parsing': 500,
     'BOM ': 500, // BOM ${state.code} parsing
     'Get Current Position': 2000,

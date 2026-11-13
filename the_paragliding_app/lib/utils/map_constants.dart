@@ -37,11 +37,11 @@ class MapConstants {
   static const Duration nwsStationListCacheTTL = Duration(hours: 24); // Stations don't move/change
   static const Duration nwsObservationCacheTTL = Duration(minutes: 10); // Observations update 1-60min
 
-  // Pioupiou-specific caching (global station list strategy)
-  static const Duration pioupiouStationListCacheTTL = Duration(hours: 24); // Stations don't move
-  static const Duration pioupiouMeasurementsCacheTTL = Duration(minutes: 5); // Readings update about every 5 minutes
+  // OpenWindMap-specific caching (global station list strategy)
+  static const Duration openWindMapStationListCacheTTL = Duration(hours: 24); // Stations don't move
+  static const Duration openWindMapMeasurementsCacheTTL = Duration(minutes: 5); // Readings update about every 5 minutes
 
-  // FFVL-specific caching (global beacon list strategy, similar to Pioupiou)
+  // FFVL-specific caching (global beacon list strategy, similar to OpenWindMap)
   static const Duration ffvlBeaconListCacheTTL = Duration(hours: 24); // Beacon list published daily
   static const Duration ffvlMeasurementsCacheTTL = Duration(minutes: 5); // Readings published every 5 minutes
   // releves.json keeps the last reading of an offline beacon. Show it only
