@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
@@ -353,54 +354,38 @@ class MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> wi
   }
 
   Future<Map<String, WindForecast>> _fetchWindForecasts(List<ParaglidingSite> sites) async {
-    // Fetch all forecasts in parallel for better performance
-    final futures = sites.map((site) => _fetchSingleForecast(site));
-    final results = await Future.wait(futures);
-
-    // Build forecasts map from results
     final forecasts = <String, WindForecast>{};
-    for (int i = 0; i < sites.length; i++) {
-      final forecast = results[i];
+
+    // Start with whatever survived from a previous launch, so a relaunch costs
+    // no API calls.
+    final uncached = <ParaglidingSite>[];
+    for (final site in sites) {
+      final cached = await WeatherService.instance.getCachedForecast(site.latitude, site.longitude);
+      if (cached != null) {
+        forecasts[generateSiteKey(site)] = cached;
+      } else {
+        uncached.add(site);
+      }
+    }
+
+    if (uncached.isEmpty) return forecasts;
+
+    // One batch request for every missing site. Per-site requests were the
+    // source of the "Too many concurrent requests" burst: ten sites meant ten
+    // simultaneous HTTP requests at launch.
+    await WeatherService.instance.getWindDataBatch(
+      uncached.map((site) => LatLng(site.latitude, site.longitude)).toList(growable: false),
+      DateTime.now(),
+    );
+
+    for (final site in uncached) {
+      final forecast = await WeatherService.instance.getCachedForecast(site.latitude, site.longitude);
       if (forecast != null) {
-        final siteKey = generateSiteKey(sites[i]);
-        forecasts[siteKey] = forecast;
+        forecasts[generateSiteKey(site)] = forecast;
       }
     }
 
     return forecasts;
-  }
-
-  Future<WindForecast?> _fetchSingleForecast(ParaglidingSite site) async {
-    try {
-      // First try to get from cache
-      var forecast = await WeatherService.instance.getCachedForecast(
-        site.latitude,
-        site.longitude,
-      );
-
-      // If not cached, fetch it
-      if (forecast == null) {
-        // Use getWindData which will fetch and cache the forecast
-        final windData = await WeatherService.instance.getWindData(
-          site.latitude,
-          site.longitude,
-          DateTime.now(),
-        );
-
-        // Now get the cached forecast that was just created
-        if (windData != null) {
-          forecast = await WeatherService.instance.getCachedForecast(
-            site.latitude,
-            site.longitude,
-          );
-        }
-      }
-
-      return forecast;
-    } catch (e) {
-      LoggingService.error('Failed to fetch forecast for ${site.name}', e);
-      return null;
-    }
   }
 
   Map<String, List<WindData?>> _getWindDataForDay(int dayIndex) {

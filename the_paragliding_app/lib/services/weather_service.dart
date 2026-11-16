@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import '../data/models/wind_data.dart';
@@ -8,6 +11,7 @@ import '../data/models/weather_model.dart';
 import '../utils/site_utils.dart';
 import '../utils/preferences_helper.dart';
 import 'logging_service.dart';
+import 'weather_forecast_cache.dart';
 
 /// Service for fetching weather data from Open-Meteo API
 class WeatherService {
@@ -27,8 +31,158 @@ class WeatherService {
   /// Cache for current weather model to avoid repeated SharedPreferences reads
   WeatherModel? _cachedModel;
 
-  /// Maximum number of locations per batch request
+  /// Maximum number of locations per batch request. Each location costs one
+  /// weighted API call, so a 100-location batch costs 100 of the 600 calls the
+  /// free API allows per minute.
   static const int maxBatchSize = 100;
+
+  /// Largest number of weather HTTP requests in flight at once.
+  @visibleForTesting
+  int maxConcurrentRequests = 4;
+
+  /// Retries after the first attempt, for 429, 5xx and transport failures.
+  @visibleForTesting
+  int maxRetries = 2;
+
+  /// Base of the exponential backoff. Tests set it to zero.
+  @visibleForTesting
+  Duration retryBaseDelay = const Duration(seconds: 1);
+
+  /// A Retry-After longer than this is not waited for. Blocking the UI for a
+  /// minute on the minutely limit is worse than showing no data now.
+  @visibleForTesting
+  Duration maxRetryAfter = const Duration(seconds: 10);
+
+  /// HTTP client. Tests replace it with a mock.
+  @visibleForTesting
+  http.Client? debugHttpClient;
+
+  final http.Client _defaultClient = http.Client();
+
+  final WeatherForecastCache _diskCache = WeatherForecastCache();
+
+  /// Tests replace this to use a temporary directory.
+  @visibleForTesting
+  WeatherForecastCache? debugDiskCache;
+
+  WeatherForecastCache get _forecastDiskCache => debugDiskCache ?? _diskCache;
+
+  Future<void>? _diskCacheLoad;
+  Timer? _diskSaveDebounce;
+  int _inFlight = 0;
+  final Queue<Completer<void>> _slotWaiters = Queue<Completer<void>>();
+  final math.Random _jitter = math.Random();
+
+  /// Load forecasts saved by a previous launch, once.
+  Future<void> _ensureDiskCacheLoaded() {
+    return _diskCacheLoad ??= _loadDiskCache();
+  }
+
+  Future<void> _loadDiskCache() async {
+    final saved = await _forecastDiskCache.load();
+    if (saved.isEmpty) return;
+
+    var restored = 0;
+    for (final entry in saved.entries) {
+      if (_forecastCache.containsKey(entry.key)) continue;
+      if (!entry.value.isFresh) continue;
+      _forecastCache[entry.key] = entry.value;
+      restored++;
+    }
+    if (restored > 0) {
+      LoggingService.info('Restored $restored fresh weather forecasts from disk');
+    }
+  }
+
+  /// Persist the cache after a short quiet period, so a pan does not write the
+  /// file once per site.
+  void _scheduleDiskSave() {
+    _diskSaveDebounce?.cancel();
+    _diskSaveDebounce = Timer(const Duration(seconds: 2), () {
+      unawaited(_forecastDiskCache.save(_forecastCache));
+    });
+  }
+
+  /// Write the cache now instead of waiting for the debounce. Tests use this;
+  /// production code relies on [_scheduleDiskSave].
+  @visibleForTesting
+  Future<void> flushDiskSave() async {
+    _diskSaveDebounce?.cancel();
+    _diskSaveDebounce = null;
+    await _forecastDiskCache.save(_forecastCache);
+  }
+
+  /// Run [action] while holding one of [maxConcurrentRequests] slots.
+  Future<T> _withRequestSlot<T>(Future<T> Function() action) async {
+    if (_inFlight >= maxConcurrentRequests) {
+      final waiter = Completer<void>();
+      _slotWaiters.add(waiter);
+      await waiter.future;
+    } else {
+      _inFlight++;
+    }
+
+    try {
+      return await action();
+    } finally {
+      if (_slotWaiters.isNotEmpty) {
+        // Hand the slot straight to the next waiter.
+        _slotWaiters.removeFirst().complete();
+      } else {
+        _inFlight--;
+      }
+    }
+  }
+
+  /// GET with retry. Honours Retry-After, and backs off exponentially for 5xx
+  /// and transport errors.
+  Future<http.Response> _getWithRetry(Uri url, {required Duration timeout}) async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        final client = debugHttpClient ?? _defaultClient;
+        final response = await _withRequestSlot(
+          () => client.get(url).timeout(timeout),
+        );
+
+        if (!_isRetryable(response.statusCode) || attempt >= maxRetries) {
+          return response;
+        }
+
+        final delay = _retryDelay(response, attempt);
+        if (delay == null) return response; // The server asked for too long a wait.
+
+        LoggingService.info(
+          'Weather API retry ${attempt + 1}/$maxRetries in ${delay.inMilliseconds}ms '
+          '(HTTP ${response.statusCode})',
+        );
+        await Future.delayed(delay);
+      } on TimeoutException {
+        if (attempt >= maxRetries) rethrow;
+        await Future.delayed(_backoff(attempt));
+      } on http.ClientException {
+        if (attempt >= maxRetries) rethrow;
+        await Future.delayed(_backoff(attempt));
+      }
+    }
+  }
+
+  static bool _isRetryable(int statusCode) => statusCode == 429 || statusCode >= 500;
+
+  Duration? _retryDelay(http.Response response, int attempt) {
+    final seconds = int.tryParse(response.headers['retry-after']?.trim() ?? '');
+    if (seconds != null) {
+      final requested = Duration(seconds: seconds);
+      if (requested > maxRetryAfter) return null;
+      return requested;
+    }
+    return _backoff(attempt);
+  }
+
+  Duration _backoff(int attempt) {
+    final baseMs = retryBaseDelay.inMilliseconds * (1 << attempt);
+    final jitterMs = retryBaseDelay.inMilliseconds == 0 ? 0 : _jitter.nextInt(250);
+    return Duration(milliseconds: baseMs + jitterMs);
+  }
 
   /// Get wind data for a specific location and time
   Future<WindData?> getWindData(
@@ -36,6 +190,8 @@ class WeatherService {
     double lon,
     DateTime dateTime,
   ) async {
+    await _ensureDiskCacheLoaded();
+
     // Generate cache key (location + model, no time component)
     final cacheKey = _getLocationKey(lat, lon);
 
@@ -80,6 +236,8 @@ class WeatherService {
     double lon,
     WeatherModel model,
   ) async {
+    await _ensureDiskCacheLoaded();
+
     // Generate cache key with specific model
     final gridLat = (lat * 100).round() / 100;
     final gridLon = (lon * 100).round() / 100;
@@ -123,6 +281,7 @@ class WeatherService {
     double lat,
     double lon,
   ) async {
+    await _ensureDiskCacheLoaded();
     final results = <WeatherModel, WindForecast>{};
 
     // Check cache first for each model
@@ -206,12 +365,7 @@ class WeatherService {
 
     final url = Uri.parse(urlString);
 
-    final response = await http.get(url).timeout(
-      const Duration(seconds: 15),
-      onTimeout: () {
-        throw TimeoutException('Multi-model API request timed out');
-      },
-    );
+    final response = await _getWithRetry(url, timeout: const Duration(seconds: 15));
 
     if (response.statusCode != 200) {
       throw Exception('API error: ${response.statusCode} - ${response.body}');
@@ -248,6 +402,7 @@ class WeatherService {
       _forecastCache[cacheKey] = forecast;
     }
 
+    _scheduleDiskSave();
     return results;
   }
 
@@ -292,13 +447,7 @@ class WeatherService {
       final url = Uri.parse(urlString);
 
       // Make API request
-      final response = await http.get(url).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          LoggingService.error('Weather API timeout for $lat, $lon');
-          throw TimeoutException('Weather API request timed out');
-        },
-      );
+      final response = await _getWithRetry(url, timeout: const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
@@ -315,6 +464,7 @@ class WeatherService {
 
         // Cache the full forecast
         _forecastCache[cacheKey] = forecast;
+        _scheduleDiskSave();
 
         LoggingService.structured('WEATHER_FORECAST_FETCHED', {
           'lat': lat,
@@ -363,13 +513,7 @@ class WeatherService {
       final url = Uri.parse(urlString);
 
       // Make API request
-      final response = await http.get(url).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          LoggingService.error('Weather API timeout for $lat, $lon (model: ${model.displayName})');
-          throw TimeoutException('Weather API request timed out');
-        },
-      );
+      final response = await _getWithRetry(url, timeout: const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
@@ -386,6 +530,7 @@ class WeatherService {
 
         // Cache the full forecast
         _forecastCache[cacheKey] = forecast;
+        _scheduleDiskSave();
 
         LoggingService.structured('WEATHER_FORECAST_FETCHED', {
           'lat': lat,
@@ -435,6 +580,8 @@ class WeatherService {
     Function()? onApiCallStart,
   }) async {
     if (locations.isEmpty) return {};
+
+    await _ensureDiskCacheLoaded();
 
     // Limit batch size
     if (locations.length > maxBatchSize) {
@@ -556,13 +703,7 @@ class WeatherService {
       final url = Uri.parse(urlString);
 
       // Make API request
-      final response = await http.get(url).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          LoggingService.error('Weather batch API timeout for ${locations.length} locations');
-          throw TimeoutException('Weather batch API request timed out');
-        },
-      );
+      final response = await _getWithRetry(url, timeout: const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         // Open-Meteo returns different formats:
@@ -599,6 +740,7 @@ class WeatherService {
           }
         }
 
+        _scheduleDiskSave();
         stopwatch.stop();
 
         LoggingService.structured('WEATHER_BATCH_SUCCESS', {
@@ -632,6 +774,7 @@ class WeatherService {
   /// Get a cached forecast for a specific location
   /// Returns null if no forecast is cached or if the forecast is stale
   Future<WindForecast?> getCachedForecast(double lat, double lon) async {
+    await _ensureDiskCacheLoaded();
     final cacheKey = _getLocationKey(lat, lon);
     if (_forecastCache.containsKey(cacheKey)) {
       final forecast = _forecastCache[cacheKey]!;
@@ -651,7 +794,30 @@ class WeatherService {
     final clearedCount = _forecastCache.length;
     _forecastCache.clear();
     _cachedModel = null;
+    _diskSaveDebounce?.cancel();
+    _diskCacheLoad = null;
+    unawaited(_forecastDiskCache.clear());
     LoggingService.info('Weather forecast cache cleared: $clearedCount forecasts removed, model cache reset');
+  }
+
+  /// Reset every piece of state so one test cannot leak into the next.
+  @visibleForTesting
+  void resetForTests() {
+    _forecastCache.clear();
+    _pendingRequests.clear();
+    _pendingBatchRequests.clear();
+    _cachedModel = null;
+    _diskSaveDebounce?.cancel();
+    _diskSaveDebounce = null;
+    _diskCacheLoad = null;
+    _inFlight = 0;
+    _slotWaiters.clear();
+    debugDiskCache = null;
+    debugHttpClient = null;
+    maxConcurrentRequests = 4;
+    maxRetries = 2;
+    retryBaseDelay = const Duration(seconds: 1);
+    maxRetryAfter = const Duration(seconds: 10);
   }
 
   /// Get cache statistics for debugging

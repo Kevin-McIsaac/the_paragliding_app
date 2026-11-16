@@ -130,6 +130,60 @@ class WindForecast {
     );
   }
 
+  /// Serialize this forecast for the on-disk cache.
+  Map<String, dynamic> toJson() {
+    return {
+      'latitude': latitude,
+      'longitude': longitude,
+      'fetchedAt': fetchedAt.toIso8601String(),
+      'timestamps': timestamps.map((t) => t.toIso8601String()).toList(growable: false),
+      'speedsKmh': speedsKmh,
+      'directionsDegs': directionsDegs,
+      'gustsKmh': gustsKmh,
+      'precipitationMm': precipitationMm,
+    };
+  }
+
+  /// Restore a forecast written by [toJson].
+  ///
+  /// Throws [FormatException] for a malformed entry, so the disk cache can
+  /// drop that entry instead of discarding every forecast in the file.
+  factory WindForecast.fromJson(Map<String, dynamic> json) {
+    final timestamps = (json['timestamps'] as List)
+        .map((value) => DateTime.parse(value as String))
+        .toList(growable: false);
+    final speeds = _doubleList(json['speedsKmh']);
+    final directions = _doubleList(json['directionsDegs']);
+    final gusts = _doubleList(json['gustsKmh']);
+    final precipitation = _doubleList(json['precipitationMm']);
+
+    final lengths = {
+      timestamps.length,
+      speeds.length,
+      directions.length,
+      gusts.length,
+      precipitation.length,
+    };
+    if (lengths.length != 1) {
+      throw FormatException('Weather cache entry has mismatched array lengths: $lengths');
+    }
+
+    return WindForecast(
+      latitude: (json['latitude'] as num).toDouble(),
+      longitude: (json['longitude'] as num).toDouble(),
+      speedsKmh: speeds,
+      directionsDegs: directions,
+      gustsKmh: gusts,
+      precipitationMm: precipitation,
+      timestamps: timestamps,
+      fetchedAt: DateTime.parse(json['fetchedAt'] as String),
+    );
+  }
+
+  static List<double> _doubleList(Object? value) {
+    return (value as List).map((entry) => (entry as num).toDouble()).toList(growable: false);
+  }
+
   /// Get wind data for a specific time by finding the closest hour
   ///
   /// Uses binary search for O(log n) performance instead of O(n) linear search.
