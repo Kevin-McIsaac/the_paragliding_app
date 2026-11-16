@@ -1,2 +1,6 @@
-• The Pioupiou weather layer is now called OpenWindMap. It uses the
-  OpenWindMap live service and keeps the same stations and readings.
+• Weather loads more reliably. The app sends fewer requests at once,
+  retries a busy weather service, and remembers forecasts for an hour,
+  so reopening the app shows wind colours immediately.
+
+• The Forecast screen fetches all its sites in one request, so it
+  loads faster.
