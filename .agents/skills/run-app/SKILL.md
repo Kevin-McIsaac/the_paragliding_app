@@ -39,19 +39,26 @@ implementation, so 3D screens show a "3D Map Not Available" placeholder on deskt
 > |---|---|---|
 > | `cannot open display: :0` | the sandbox, hiding X11 | use the Wayland socket, then escalate once |
 > | `Network is unreachable` | the network, not the sandbox | check the phone or the host route |
-> | `flutter pid N is not visible` | the sandbox's private PID namespace | check `dev_data/flutter.log`; the app may still run |
+> | `flutter pid N is not visible` | the sandbox PID namespace, or the app died with a previous call | check `dev_data/flutter.log`; if the log stops at startup, restart with 2a |
 > | `No route to host` | genuinely the network | phone asleep or off Wi-Fi — see below |
 >
 > The sandbox runs in its own PID namespace, so a healthy app's pid is invisible inside
 > it and `kill -0` fails exactly as it would for a dead one. Check the log marker before
 > you declare the app dead.
 >
+> **A detached app dies with the tool call.** DSH runs each command in a short-lived
+> `systemd-run --user --scope` unit. The scope teardown kills every process in its
+> cgroup. `dev_run.sh --background` escapes the process group with `setsid`, but it
+> does not escape the cgroup. So the app builds, starts, and then dies when the call
+> returns. The log has no `flutter exited` marker because the marker watcher dies in the
+> same cgroup. This is not a sandbox fault: it also happens with full access.
+>
 > There **is** a display. Do not conclude the environment is headless and go looking for
 > `xvfb` — that has burned a whole verification cycle more than once.
 
 ```bash
-bin/dev_run.sh --background                 # desktop
-bin/dev_run.sh -d "<device>" --background   # Android
+bin/dev_run.sh --background                 # desktop, human terminal only
+bin/dev_run.sh -d "<device>" --background   # Android, human terminal only
 ```
 
 > **Linux renderer (Flutter 3.47+).** 3.47 defaults to Impeller on Linux. On this
@@ -63,8 +70,33 @@ bin/dev_run.sh -d "<device>" --background   # Android
 > `memoryfield/linux-impeller-slow-without-gpu.md`.
 
 `--background` detaches the app and returns **only once it is actually up** — or fails
-fast with the real error and the tail of the log. Agents should always use it; without it
-the command blocks until you quit the app.
+fast with the real error and the tail of the log. In a human terminal, use it freely.
+**In an agent shell it is wrong**: the app dies with the tool call. Use 2a instead.
+
+### 2a. Agents: start it as a managed background job
+
+Run the **blocking** command in a harness background job, and keep that job alive for the
+session. Do not pass `--background`.
+
+```bash
+export PATH="$HOME/flutter/bin:$HOME/android-sdk/platform-tools:$PATH" \
+       ANDROID_HOME="$HOME/android-sdk" ANDROID_SDK_ROOT="$HOME/android-sdk" \
+       XDG_CONFIG_HOME=/tmp/flutter-config XDG_DATA_HOME=/tmp/flutter-data \
+       FLUTTER_SUPPRESS_ANALYTICS=true
+exec bin/dev_run.sh
+```
+
+Call that with `run_in_background: true`.
+
+- **Start the job with `sandbox_permissions: "danger-full-access"`.** Under `workspace-write`
+  the sandbox PID namespace writes a namespace-local pid into `dev_data/flutter.pid`
+  (seen: `11`). `bin/dev_screenshot.sh` and `bin/dev_reload.sh` then cannot find the app
+  from another call, even while it runs. Full access writes the host pid.
+- **Wait for readiness** on `A Dart VM Service on Linux is available at:` in
+  `dev_data/flutter.log`, or on a pid that `kill -0` accepts.
+- **Stop it with `job_kill`**, or `kill "$(cat dev_data/flutter.pid)"` from a full-access
+  call. Never use a broad `pkill -f`: the pattern also matches the tool's own `bash -c`
+  command line, and that kills your shell (exit 143).
 
 **In a fresh worktree, `mkdir -p dev_data` first.** `dev_data/` is gitignored, so a new
 worktree has none and `dev_run.sh` dies on its own log redirect with `dev_data/flutter.log:
